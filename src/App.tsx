@@ -1,27 +1,61 @@
+// src/App.tsx
+
 import { useState, useEffect, useCallback } from 'react';
 import NetworkGraph from './components/NetworkGraph';
 import Sidebar from './components/Sidebar';
 import RightSidebar from './components/RightSidebar';
 import MobileBottomNav from './components/MobileBottomNav';
 import { WelcomeModal } from './components/WelcomeModal';
-import { fetchStats, fetchRelationships, fetchActorRelationships, fetchTagClusters, fetchActorCounts } from './api';
-import type { Stats, Relationship, TagCluster } from './types';
+import { NetworkBuilder } from './services/networkBuilder';
+import { 
+  fetchStats, 
+  fetchRelationships, 
+  fetchActorRelationships, 
+  fetchTagClusters, 
+  fetchActorCounts 
+} from './api';
+import type { 
+  Stats, 
+  Relationship, 
+  TagCluster, 
+  NetworkBuilderState, 
+  FilteredGraph,
+  GraphNode,
+  GraphLink 
+} from './types';
 
 function App() {
-  // Detect if mobile on initial load (lg breakpoint is 1024px in Tailwind)
   const isMobile = window.innerWidth < 1024;
 
+  // Build mode state
+  const [buildMode, setBuildMode] = useState<'top-down' | 'bottom-up'>('top-down');
+  
+  // Bottom-up builder state
+  const [fullGraph, setFullGraph] = useState<{ nodes: GraphNode[], links: GraphLink[] }>({ 
+    nodes: [], 
+    links: [] 
+  });
+  const [builder, setBuilder] = useState<NetworkBuilder | null>(null);
+  const [displayGraph, setDisplayGraph] = useState<FilteredGraph>({
+    nodes: [],
+    links: [],
+    truncated: false,
+    matchedCount: 0
+  });
+
+  // Existing state
   const [stats, setStats] = useState<Stats | null>(null);
   const [tagClusters, setTagClusters] = useState<TagCluster[]>([]);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
+  const [bottomUpSearchKeywords, setBottomUpSearchKeywords] = useState('');
   const [totalBeforeLimit, setTotalBeforeLimit] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [selectedActor, setSelectedActor] = useState<string | null>(null);
   const [actorRelationships, setActorRelationships] = useState<Relationship[]>([]);
   const [actorTotalBeforeFilter, setActorTotalBeforeFilter] = useState<number>(0);
   const [limit, setLimit] = useState(isMobile ? 5000 : 9600);
-  const [maxHops, setMaxHops] = useState<number | null>(3); // Default 3 hops
-  const [minDensity, setMinDensity] = useState(50); // Default 50% density threshold
+  const [maxHops, setMaxHops] = useState<number | null>(1000);
+  const [minDensity, setMinDensity] = useState(50);
   const [enabledClusterIds, setEnabledClusterIds] = useState<Set<number>>(new Set());
   const [enabledCategories, setEnabledCategories] = useState<Set<string>>(new Set());
   const [yearRange, setYearRange] = useState<[number, number]>([1980, 2025]);
@@ -29,23 +63,87 @@ function App() {
   const [keywords, setKeywords] = useState('');
   const [actorTotalCounts, setActorTotalCounts] = useState<Record<string, number>>({});
   const [showWelcome, setShowWelcome] = useState(() => {
-    // Check if user has seen the welcome message before
     return !localStorage.getItem('hasSeenWelcome');
   });
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load tag clusters and stats on mount, then trigger initial data load
+  // Convert graph nodes/links to relationships for the existing renderer
+  const convertGraphToRelationships = useCallback((nodes: GraphNode[], links: GraphLink[]): Relationship[] => {
+    return links.map((link, idx) => {
+      const sourceNode = nodes.find(n => n.id === (typeof link.source === 'string' ? link.source : link.source.id));
+      const targetNode = nodes.find(n => n.id === (typeof link.target === 'string' ? link.target : link.target.id));
+      
+      return {
+        id: idx,
+        doc_id: sourceNode?.id || '',
+        timestamp: link.timestamp || null,
+        actor: sourceNode?.name || sourceNode?.id || '',
+        action: link.action || link.edge_type || 'relationship',
+        target: targetNode?.name || targetNode?.id || '',
+        location: link.location || null,
+        tags: [],
+        actor_type: sourceNode?.node_type,
+        target_type: targetNode?.node_type,
+        actor_id: sourceNode?.id,
+        target_id: targetNode?.id,
+      };
+    });
+  }, []);
+
+  // Load full graph data for bottom-up builder on mount
+  useEffect(() => {
+    const loadGraphData = async () => {
+      try {
+        console.log('Loading graph data for network builder...');
+        
+        const apiModule = await import('./api');
+        
+        if (typeof apiModule.loadGraph === 'function') {
+          const data = await apiModule.loadGraph();
+          
+          console.log('✅ Graph data loaded successfully:', {
+            nodes: data.nodes.length,
+            links: data.links.length,
+            sampleNode: data.nodes[0]
+          });
+          
+          setFullGraph(data);
+          setBuilder(new NetworkBuilder(data.nodes, data.links));
+          
+          setDisplayGraph({
+            nodes: data.nodes,
+            links: data.links,
+            truncated: false,
+            matchedCount: data.nodes.length
+          });
+        } else {
+          throw new Error('loadGraph function not found in api module');
+        }
+      } catch (err) {
+        console.error('❌ Failed to load graph data:', err);
+        
+        if (err instanceof Error) {
+          if (err.message.includes('404') || err.message.includes('Failed to load graph data')) {
+            console.error('📝 Make sure title26_graph.json exists in the /public folder');
+          }
+        }
+        
+        setFullGraph({ nodes: [], links: [] });
+      }
+    };
+    
+    loadGraphData();
+  }, []);
+
+  // Load tag clusters and stats on mount
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Load tag clusters and stats in parallel
         const [clusters, statsData] = await Promise.all([
           fetchTagClusters(),
           fetchStats()
         ]);
 
-        // Batch all state updates together with a single render using a microtask
-        // This ensures enabledClusterIds and enabledCategories are set before the data loading effect runs
         queueMicrotask(() => {
           setTagClusters(clusters);
           setEnabledClusterIds(new Set(clusters.map(c => c.id)));
@@ -60,44 +158,81 @@ function App() {
     initializeApp();
   }, []);
 
-  // Load data when limit, enabled clusters, enabled categories, year range, includeUndated, keywords, or maxHops change (but only after initialization)
+  // Load data when filters change (only in top-down mode)
   useEffect(() => {
-    if (isInitialized) {
+    if (isInitialized && buildMode === 'top-down') {
       loadData();
     }
-  }, [isInitialized, limit, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops]);
+  }, [isInitialized, buildMode, limit, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const clusterIds = Array.from(enabledClusterIds);
-      const categories = Array.from(enabledCategories);
-      const [relationshipsResponse, actorCounts] = await Promise.all([
-        fetchRelationships(limit, clusterIds, categories, yearRange, includeUndated, keywords, maxHops),
-        fetchActorCounts(300)
-      ]);
-      setRelationships(relationshipsResponse.relationships);
-      setTotalBeforeLimit(relationshipsResponse.totalBeforeLimit);
-      setActorTotalCounts(actorCounts);
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setLoading(false);
+
+
+const loadData = async () => {
+  try {
+    setLoading(true);
+    const clusterIds = Array.from(enabledClusterIds);
+    const categories = Array.from(enabledCategories);
+    const [relationshipsResponse, actorCounts] = await Promise.all([
+      fetchRelationships(limit, clusterIds, categories, yearRange, includeUndated, keywords, maxHops),
+      fetchActorCounts(300)
+    ]);
+    
+    // Apply node count limit if maxHops is set (we're reusing maxHops as maxNodes)
+    let filteredRelationships = relationshipsResponse.relationships;
+    
+    if (maxHops !== null && maxHops < relationshipsResponse.relationships.length) {
+      // Build a set of unique nodes from relationships
+      const nodeSet = new Set<string>();
+      const nodeDegree = new Map<string, number>();
+      
+      relationshipsResponse.relationships.forEach(rel => {
+        const actorId = rel.actor_id ?? rel.actor;
+        const targetId = rel.target_id ?? rel.target;
+        
+        nodeSet.add(actorId);
+        nodeSet.add(targetId);
+        
+        nodeDegree.set(actorId, (nodeDegree.get(actorId) || 0) + 1);
+        nodeDegree.set(targetId, (nodeDegree.get(targetId) || 0) + 1);
+      });
+      
+      // If we have more nodes than maxHops, keep only the top N by degree
+      if (nodeSet.size > maxHops) {
+        const sortedNodes = Array.from(nodeDegree.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, maxHops)
+          .map(([nodeId]) => nodeId);
+        
+        const allowedNodes = new Set(sortedNodes);
+        
+        // Filter relationships to only include those between allowed nodes
+        filteredRelationships = relationshipsResponse.relationships.filter(rel => {
+          const actorId = rel.actor_id ?? rel.actor;
+          const targetId = rel.target_id ?? rel.target;
+          return allowedNodes.has(actorId) && allowedNodes.has(targetId);
+        });
+      }
     }
-  };
+    
+    setRelationships(filteredRelationships);
+    setTotalBeforeLimit(relationshipsResponse.totalBeforeLimit);
+    setActorTotalCounts(actorCounts);
+  } catch (error) {
+    console.error('Error loading data:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleActorClick = useCallback((actorName: string | null) => {
-  setSelectedActor(prev => {
-    // If clicking the same name, clear selection; if null, also clear
-    if (actorName === null) return null;
-    if (prev === actorName) return null;
-    return actorName;
-  });
-}, []);
+    setSelectedActor(prev => {
+      if (actorName === null) return null;
+      if (prev === actorName) return null;
+      return actorName;
+    });
+  }, []);
 
-
-
-  // Toggle tag cluster
   const toggleCluster = useCallback((clusterId: number) => {
     setEnabledClusterIds(prev => {
       const next = new Set(prev);
@@ -110,7 +245,6 @@ function App() {
     });
   }, []);
 
-  // Toggle category
   const toggleCategory = useCallback((category: string) => {
     setEnabledCategories(prev => {
       const next = new Set(prev);
@@ -123,13 +257,12 @@ function App() {
     });
   }, []);
 
-  // Handle closing welcome modal
   const handleCloseWelcome = useCallback(() => {
     localStorage.setItem('hasSeenWelcome', 'true');
     setShowWelcome(false);
   }, []);
 
-  // Fetch actor-specific relationships when an actor is selected or clusters/categories/year range/includeUndated/keywords/maxHops change
+  // Fetch actor-specific relationships
   useEffect(() => {
     if (!selectedActor) {
       setActorRelationships([]);
@@ -137,26 +270,158 @@ function App() {
       return;
     }
 
-    const loadActorRelationships = async () => {
-      try {
-        const clusterIds = Array.from(enabledClusterIds);
-        const categories = Array.from(enabledCategories);
-        const response = await fetchActorRelationships(selectedActor, clusterIds, categories, yearRange, includeUndated, keywords, maxHops);
-        setActorRelationships(response.relationships);
-        setActorTotalBeforeFilter(response.totalBeforeFilter);
-      } catch (error) {
-        console.error('Error loading actor relationships:', error);
-        setActorRelationships([]);
-        setActorTotalBeforeFilter(0);
+    if (buildMode === 'top-down') {
+      // Top-down mode: use API
+      const loadActorRelationships = async () => {
+        try {
+          const clusterIds = Array.from(enabledClusterIds);
+          const categories = Array.from(enabledCategories);
+          const response = await fetchActorRelationships(
+            selectedActor, 
+            clusterIds, 
+            categories, 
+            yearRange, 
+            includeUndated, 
+            keywords, 
+            maxHops
+          );
+          setActorRelationships(response.relationships);
+          setActorTotalBeforeFilter(response.totalBeforeFilter);
+        } catch (error) {
+          console.error('Error loading actor relationships:', error);
+          setActorRelationships([]);
+          setActorTotalBeforeFilter(0);
+        }
+      };
+      loadActorRelationships();
+    } else {
+      // Bottom-up mode: filter from display graph
+      const nodeId = displayGraph.nodes.find(n => n.name === selectedActor)?.id;
+      if (nodeId) {
+        const relatedLinks = displayGraph.links.filter(link => {
+          const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+          const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+          return sourceId === nodeId || targetId === nodeId;
+        });
+        
+        const relationships = convertGraphToRelationships(displayGraph.nodes, relatedLinks);
+        setActorRelationships(relationships);
+        setActorTotalBeforeFilter(relationships.length);
       }
-    };
+    }
+  }, [buildMode, selectedActor, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops, displayGraph, convertGraphToRelationships]);
 
-    loadActorRelationships();
-  }, [selectedActor, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops]);
+  // Handle bottom-up network building
+  const handleBottomUpSearch = useCallback((params: {
+    keywords: string;
+    expansionDegree: number;
+    maxNodes: number;
+    nodeTypes: string[];
+    edgeTypes: string[];
+    searchFields: string[];
+    searchLogic: 'AND' | 'OR';
+  }) => {
+    if (!builder) {
+      console.error('Builder not initialized yet');
+      alert('Network builder is not ready. Please wait for the data to load.');
+      return;
+    }
+    
+    if (!params.keywords.trim()) {
+      console.warn('No search keywords provided');
+      alert('Please enter some keywords to search for (e.g., "tax")');
+      return;
+    }
+
+    if (params.searchFields.length == 0) {
+      alert('Please select at least one field to search in.');
+      return;
+    }
+    
+    setBottomUpSearchKeywords(params.keywords);
+    
+    setLoading(true);
+    try {
+      const terms = params.keywords.split(',').map(t => t.trim()).filter(t => t);
+      
+      console.log('=== Building Bottom-Up Network ===');
+      console.log('Search keywords:', terms);
+      console.log('Search fields:', params.searchFields);
+      console.log('Search logic:', params.searchLogic);
+      console.log('Expansion degree:', params.expansionDegree);
+      console.log('Max nodes:', params.maxNodes);
+      console.log('Node type filters:', params.nodeTypes);
+      console.log('Edge type filters:', params.edgeTypes);
+      
+      const builderState: NetworkBuilderState = {
+        searchTerms: terms,
+        searchFields: params.searchFields,
+        allowedNodeTypes: params.nodeTypes as ('section' | 'entity' | 'tag')[],
+        allowedEdgeTypes: params.edgeTypes as ('citation' | 'section_entity' | 'section_tag')[],
+        allowedTitles: [],
+        allowedSections: [],
+        seedNodeIds: [],
+        expansionDepth: params.expansionDegree,
+        maxNodesPerExpansion: 100,
+        maxTotalNodes: params.maxNodes
+      };
+      
+      const filtered = builder.buildNetwork(builderState, params.searchLogic);
+      
+      console.log('=== Build Complete ===');
+      console.log('Result:', {
+        nodes: filtered.nodes.length,
+        links: filtered.links.length,
+        truncated: filtered.truncated,
+        matchedCount: filtered.matchedCount
+      });
+      
+      if (filtered.nodes.length === 0) {
+        alert(`No nodes found matching "${terms.join(', ')}". Try different keywords or increase the degree of connection.`);
+      }
+      
+      // Convert to relationships for the existing renderer
+      const builtRelationships = convertGraphToRelationships(filtered.nodes, filtered.links);
+      setRelationships(builtRelationships);
+      setTotalBeforeLimit(filtered.matchedCount);
+      
+      setDisplayGraph(filtered);
+      setBuildMode('bottom-up');
+    } catch (error) {
+      console.error('Error building network:', error);
+      alert('An error occurred while building the network. Check the console for details.');
+    } finally {
+      setLoading(false);
+    }
+  }, [builder, convertGraphToRelationships]);
+
+  // Start new network (switch to bottom-up mode)
+  const handleStartNewNetwork = useCallback(() => {
+    setBuildMode('bottom-up');
+    setKeywords('');
+    setBottomUpSearchKeywords('');
+    setRelationships([]);
+    setDisplayGraph({
+      nodes: [],
+      links: [],
+      truncated: false,
+      matchedCount: 0
+    });
+    setSelectedActor(null);
+    setActorRelationships([]);
+  }, []);
+
+  // Reset to top-down mode
+  const handleResetToTopDown = useCallback(() => {
+    setBuildMode('top-down');
+    setSelectedActor(null);
+    setActorRelationships([]);
+    loadData();
+  }, []);
 
   return (
     <div className="flex h-screen bg-gray-900 text-white">
-      {/* Desktop Sidebar - hidden on mobile */}
+      {/* Desktop Sidebar */}
       <div className="hidden lg:block">
         <Sidebar
           stats={stats}
@@ -179,11 +444,26 @@ function App() {
           onIncludeUndatedChange={setIncludeUndated}
           keywords={keywords}
           onKeywordsChange={setKeywords}
+          buildMode={buildMode}
+          onStartNewNetwork={handleStartNewNetwork}
+          onResetToTopDown={handleResetToTopDown}
+          onBottomUpSearch={handleBottomUpSearch}
+          displayGraphInfo={buildMode === 'bottom-up' ? {
+            nodeCount: displayGraph.nodes.length,
+            truncated: displayGraph.truncated,
+            matchedCount: displayGraph.matchedCount
+          } : undefined}
         />
       </div>
 
       {/* Main Graph Area */}
       <div className="flex-1 relative pb-16 lg:pb-0">
+        {buildMode === 'bottom-up' && displayGraph.truncated && (
+          <div className="absolute top-4 left-4 z-10 bg-yellow-100 border border-yellow-400 text-yellow-900 px-4 py-2 rounded shadow-lg">
+            ⚠ Showing {displayGraph.nodes.length} of {displayGraph.matchedCount} matching nodes
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -202,7 +482,7 @@ function App() {
         )}
       </div>
 
-      {/* Desktop Right Sidebar - hidden on mobile */}
+      {/* Desktop Right Sidebar */}
       {selectedActor && (
         <div className="hidden lg:block">
           <RightSidebar
@@ -211,11 +491,12 @@ function App() {
             totalRelationships={actorTotalBeforeFilter}
             onClose={() => setSelectedActor(null)}
             yearRange={yearRange}
+            keywords={buildMode === 'bottom-up' ? bottomUpSearchKeywords : keywords} 
           />
         </div>
       )}
 
-      {/* Mobile Bottom Navigation - shown only on mobile */}
+      {/* Mobile Bottom Navigation */}
       <div className="lg:hidden">
         <MobileBottomNav
           stats={stats}

@@ -378,3 +378,5 @@ export async function fetchDocumentText(
     text: 'Full text is not available for this node in this demo.',
   };
 }
+
+export { loadGraph };

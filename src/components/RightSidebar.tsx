@@ -9,6 +9,7 @@ interface RightSidebarProps {
   totalRelationships: number;
   onClose: () => void;
   yearRange: [number, number];
+  keywords?: string;
 }
 
 export default function RightSidebar({
@@ -17,7 +18,9 @@ export default function RightSidebar({
   totalRelationships,
   onClose,
   yearRange,
+  keywords,
 }: RightSidebarProps) {
+  console.log('🔍 RightSidebar keywords:', keywords);
   const [expandedRelId, setExpandedRelId] = useState<number | null>(null);
   const [documentToView, setDocumentToView] = useState<string | null>(null);
   const [filterActor, setFilterActor] = useState<string | null>(null);
@@ -328,6 +331,7 @@ export default function RightSidebar({
           docId={documentToView}
           highlightTerm={selectedActor}
           secondaryHighlightTerm={null}
+          searchKeywords={keywords}
           onClose={() => setDocumentToView(null)}
         />
       )}

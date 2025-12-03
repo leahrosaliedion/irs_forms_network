@@ -1,3 +1,5 @@
+// src/components/NetworkGraph.tsx
+
 import { useEffect, useRef, useMemo, useState } from 'react';
 import * as d3 from 'd3';
 import type { Relationship, GraphNode, GraphLink, NodeType } from '../types';
@@ -7,7 +9,7 @@ interface NetworkGraphProps {
   relationships: Relationship[];
   selectedActor: string | null;
   onActorClick: (actorName: string | null) => void;
-  minDensity: number;
+  minDensity: number; // Keep for compatibility but don't use it
   actorTotalCounts: Record<string, number>;
 }
 
@@ -28,7 +30,7 @@ export default function NetworkGraph({
   relationships,
   selectedActor,
   onActorClick,
-  minDensity,
+  minDensity, // Not used anymore
   actorTotalCounts
 }: NetworkGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -108,35 +110,6 @@ export default function NetworkGraph({
     }
 
     const maxVal = Math.max(...allNodes.map(n => n.val), 1);
-    const densityThreshold = minDensity;
-
-    const nodesToKeep = new Set<string>();
-    allNodes.forEach(node => {
-      if (node.val >= densityThreshold) {
-        nodesToKeep.add(node.id);
-      }
-    });
-
-    if (nodesToKeep.size === 0) {
-      allNodes.forEach(node => nodesToKeep.add(node.id));
-    }
-
-    const filteredLinks = links.filter(link => {
-      const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
-      const targetId = typeof link.target === 'string' ? link.target : link.target.id;
-      return nodesToKeep.has(sourceId) && nodesToKeep.has(targetId);
-    });
-
-    const filteredConnectionsMap = new Map<string, number>();
-    allNodes.forEach(node => filteredConnectionsMap.set(node.id, 0));
-
-    filteredLinks.forEach(link => {
-      const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
-      const targetId = typeof link.target === 'string' ? link.target : link.target.id;
-      const count = (link as any).count || 1;
-      filteredConnectionsMap.set(sourceId, (filteredConnectionsMap.get(sourceId) || 0) + count);
-      filteredConnectionsMap.set(targetId, (filteredConnectionsMap.get(targetId) || 0) + count);
-    });
 
     const strength = (v: number) => v / maxVal;
 
@@ -150,36 +123,32 @@ export default function NetworkGraph({
       d3.interpolateRgb('#e9d5ff', '#6d28d9')(t)
     );
 
-    const nodes = allNodes
-      .filter(node => nodesToKeep.has(node.id))
-      .map(node => {
-        const filteredVal = filteredConnectionsMap.get(node.id) || 0;
-        const val = filteredVal > 0 ? filteredVal : node.val;
-        const t = strength(val);
+    const nodes = allNodes.map(node => {
+      const t = strength(node.val);
 
-        let color = node.baseColor || baseColorForType(node.node_type);
-        if (node.node_type === 'section') {
-          color = sectionColorScale(t);
-        } else if (node.node_type === 'entity') {
-          color = entityColorScale(t);
-        } else if (node.node_type === 'tag') {
-          color = tagColorScale(t);
-        }
+      let color = node.baseColor || baseColorForType(node.node_type);
+      if (node.node_type === 'section') {
+        color = sectionColorScale(t);
+      } else if (node.node_type === 'entity') {
+        color = entityColorScale(t);
+      } else if (node.node_type === 'tag') {
+        color = tagColorScale(t);
+      }
 
-        return {
-          ...node,
-          val,
-          totalVal: node.val,
-          color,
-          baseColor: color,
-        };
-      });
+      return {
+        ...node,
+        val: node.val,
+        totalVal: node.val,
+        color,
+        baseColor: color,
+      };
+    });
 
     return {
       nodes,
-      links: filteredLinks,
+      links,
     };
-  }, [relationships, minDensity]);
+  }, [relationships]);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -202,7 +171,6 @@ export default function NetworkGraph({
 
     svg.call(zoom);
 
-    // Background click: clear selection and gently reheat simulation
     svg.on('click', () => {
       onActorClick(null);
       if (simulationRef.current) {
@@ -395,7 +363,6 @@ export default function NetworkGraph({
       simulation.stop();
       tooltip.remove();
     };
-  // IMPORTANT: Only depend on graphData and onActorClick to avoid resets on hover/selection
   }, [graphData, onActorClick]);
 
   useEffect(() => {
