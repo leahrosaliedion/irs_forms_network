@@ -61,9 +61,12 @@ export default function DocumentModal({
         setDocument({
   ...doc,  // ← Changed from {doc, to ...doc,
   title: nodeDetails?.title,
-  title_heading: nodeDetails?.title_heading,
-  section_num: nodeDetails?.section_num,
-  section_heading: nodeDetails?.section_heading
+  full_name: nodeDetails?.full_name,
+  text: nodeDetails?.text,
+  part: nodeDetails?.part,
+  chapter: nodeDetails?.chapter,
+  subchapter: nodeDetails?.subchapter,
+  section: nodeDetails?.section
 });
         setDocumentText(textData.text);
       } catch (err) {
@@ -309,24 +312,23 @@ export default function DocumentModal({
        {/* Header */}
 <div className="p-6 border-b border-gray-700 flex justify-between items-start">
   <div className="flex-1">
-    {/* Display title and title_heading on first line */}
-    {document && document.title && (
+    {/* Display full_name if available */}
+    {document && document.full_name && (
       <h3 className="text-lg font-medium text-gray-400 mb-1">
-        Title {document.title}
-        {document.title_heading && ` – ${document.title_heading}`}
+        {document.full_name}
       </h3>
     )}
     
-    {/* Display section_num and section_heading on second line */}
+    {/* Display node name/id as the main heading */}
     <h2 className="text-2xl font-semibold text-blue-400 mb-2">
-      {document?.section_num && `§ ${document.section_num}`}
-      {document?.section_heading && ` ${document.section_heading}`}
-      {!document?.section_num && (document?.doc_id || docId)}
+      {document?.name || document?.doc_id || docId}
     </h2>
     
     {document && (
       <div className="space-y-1 text-sm">
-        <p className="text-gray-300">{document.one_sentence_summary}</p>
+        {document.one_sentence_summary && (
+          <p className="text-gray-300">{document.one_sentence_summary}</p>
+        )}
         <div className="flex gap-4 text-gray-500">
           <span className="px-2 py-1 bg-gray-700 rounded">
             {document.category}
@@ -343,14 +345,14 @@ export default function DocumentModal({
         </div>
       </div>
     )}
-          </div>
-          <button
-            onClick={onClose}
-            className="ml-4 text-gray-400 hover:text-white text-2xl leading-none transition-colors"
-          >
-            ✕
-          </button>
-        </div>
+  </div>
+  <button
+    onClick={onClose}
+    className="ml-4 text-gray-400 hover:text-white text-2xl leading-none transition-colors"
+  >
+    ✕
+  </button>
+</div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 pr-12" ref={contentRef}>

@@ -87,18 +87,18 @@ export default function Sidebar({
   const [maxSliderZIndex, setMaxSliderZIndex] = useState(3);
 
   // Bottom-up mode state - initialize with all types selected
-  const [nodeTypeFilters, setNodeTypeFilters] = useState<Set<'section' | 'entity' | 'tag'>>(
-    new Set(['section', 'entity', 'tag'])
+  const [nodeTypeFilters, setNodeTypeFilters] = useState<Set<'section' | 'entity' | 'concept'>>(
+    new Set(['section', 'entity', 'concept'])
   );
-  const [edgeTypeFilters, setEdgeTypeFilters] = useState<Set<'citation' | 'section_entity' | 'section_tag'>>(
-    new Set(['citation', 'section_entity', 'section_tag'])
+  const [edgeTypeFilters, setEdgeTypeFilters] = useState<Set<'definition' | 'reference' | 'hierarchy'>>(
+    new Set(['definition', 'reference', 'hierarchy'])
   );
   const [maxNodes, setMaxNodes] = useState(1000);
   const [expansionDegree, setExpansionDegree] = useState(1);
 
   // NEW: Search field selection
   const [searchFields, setSearchFields] = useState<Set<string>>(
-    new Set(['section_text', 'section_heading', 'section_num', 'entity', 'tag'])
+    new Set(['text', 'section_heading', 'section_num', 'entity', 'concept'])
   );
 
   // NEW: Search logic (AND vs OR)
@@ -218,7 +218,7 @@ export default function Sidebar({
     }
   };
 
-  const toggleNodeType = (type: 'section' | 'entity' | 'tag') => {
+  const toggleNodeType = (type: 'section' | 'entity' | 'concept') => {
     setNodeTypeFilters(prev => {
       const next = new Set(prev);
       if (next.has(type)) {
@@ -230,7 +230,7 @@ export default function Sidebar({
     });
   };
 
-  const toggleEdgeType = (type: 'citation' | 'section_entity' | 'section_tag') => {
+  const toggleEdgeType = (type: 'definition' | 'reference' | 'hierarchy') => {
     setEdgeTypeFilters(prev => {
       const next = new Set(prev);
       if (next.has(type)) {
@@ -244,7 +244,7 @@ export default function Sidebar({
 
   // Select/Deselect all for node types
   const selectAllNodeTypes = () => {
-    setNodeTypeFilters(new Set(['section', 'entity', 'tag']));
+    setNodeTypeFilters(new Set(['section', 'entity', 'concept']));
   };
 
   const deselectAllNodeTypes = () => {
@@ -253,7 +253,7 @@ export default function Sidebar({
 
   // Select/Deselect all for edge types
   const selectAllEdgeTypes = () => {
-    setEdgeTypeFilters(new Set(['citation', 'section_entity', 'section_tag']));
+    setEdgeTypeFilters(new Set(['definition', 'reference', 'hierarchy']));
   };
 
   const deselectAllEdgeTypes = () => {
@@ -275,7 +275,7 @@ export default function Sidebar({
 
   // Select/Deselect all search fields
   const selectAllSearchFields = () => {
-    setSearchFields(new Set(['section_text', 'section_heading', 'section_num', 'entity', 'tag']));
+    setSearchFields(new Set(['text', 'section_heading', 'section_num', 'entity', 'concept']));
   };
 
   const deselectAllSearchFields = () => {

@@ -1,220 +1,121 @@
 // src/api.ts
-import type {
-  GraphData,
-  GraphNode,
+
+import type { 
+  Stats, 
+  Relationship, 
+  Actor, 
+  TagCluster, 
+  GraphData, 
+  GraphNode, 
   GraphLink,
-  Relationship,
-  Stats,
-  TagCluster,
-  Actor,
-  Document,
-  NodeType,
+  Document 
 } from './types';
 
-const GRAPH_URL = `${import.meta.env.BASE_URL}title26_graph.json`;
-
-// Shape of the raw JSON coming from Python
-interface RawNode {
-  id: string;
-  label?: string;
-  node_type?: string;       // 'section' | 'entity' | 'tag'
-  section_num?: string | number;
-  section_heading?: string;
-  title?: string | number;
-  title_heading?: string;
-  terms?: string;
-  tags?: string;
-  aux_verbs?: string;
-  section_text?: string;
-
-  // entity metadata from CSV
-  department?: string;
-  total_mentions?: number;
-  entity?: string;
-}
-
-interface RawLink {
-  source: string;
-  target: string;
-  edge_type?: string;       // 'citation' | 'section_entity' | 'section_tag' | etc.
-  weight?: number;
-}
-
-interface RawGraphData {
-  nodes: RawNode[];
-  links: RawLink[];
-}
-
-// In-memory cache so we only fetch once
 let cachedGraph: GraphData | null = null;
 
-// Color helper by node type
-function colorForType(t?: NodeType): string {
-  switch (t) {
-    case 'section':
-      return '#60a5fa'; // blue
-    case 'entity':
-      return '#f97316'; // orange
-    case 'tag':
-      return '#a855f7'; // purple
-    default:
-      return '#6b7280'; // gray
-  }
+// Mock stats (you can update this based on your actual data later)
+export async function fetchStats(): Promise<Stats> {
+  return {
+    totalDocuments: { count: 9718 },  // Number of index nodes
+    totalTriples: { count: 44967 },   // Total links
+    totalActors: { count: 9292 },     // Number of term nodes
+    categories: [
+      { category: 'definition', count: 478 },
+      { category: 'reference', count: 34772 },
+      { category: 'hierarchy', count: 9717 },
+    ],
+  };
 }
 
-// Load and normalize the graph from JSON into GraphNode/GraphLink
-async function loadGraph(): Promise<GraphData> {
-  if (cachedGraph) return cachedGraph;
+export async function fetchTagClusters(): Promise<TagCluster[]> {
+  // Return empty for now - you can populate this later if needed
+  return [];
+}
 
-  const res = await fetch(GRAPH_URL);
+export async function loadGraph(): Promise<GraphData> {
+  const res = await fetch('/title26_graph.json');
   if (!res.ok) {
-    throw new Error(`Failed to load graph data from ${GRAPH_URL}: ${res.status}`);
+    throw new Error('Failed to load graph data');
   }
+  const raw = (await res.json()) as { nodes: any[]; links: any[] };
 
-  const raw = (await res.json()) as RawGraphData;
+  // Compute degree for each node
+  const degreeMap = new Map<string, number>();
+  raw.links.forEach((link) => {
+    const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+    const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+    degreeMap.set(sourceId, (degreeMap.get(sourceId) || 0) + 1);
+    degreeMap.set(targetId, (degreeMap.get(targetId) || 0) + 1);
+  });
 
-  const nodes: GraphNode[] = raw.nodes.map((n: RawNode & Record<string, unknown>) => {
-    const nodeType = n.node_type as NodeType | undefined;
+  const maxDegree = Math.max(...Array.from(degreeMap.values()), 1);
 
-    // Prefer section_num as label for sections, otherwise label/id
-    let name: string;
-    if (nodeType === 'section' && n.section_num != null) {
-      name = String(n.section_num);
+  // Build nodes with colors based on type and degree
+  const nodes: GraphNode[] = raw.nodes.map((n) => {
+    const degree = degreeMap.get(n.id) || 0;
+    const normalizedDegree = degree / maxDegree;
+
+    let baseColor: string;
+    if (n.node_type === 'section') {
+      baseColor = '#3b82f6'; // blue for sections
+    } else if (n.node_type === 'entity') {
+      baseColor = '#f97316'; // orange for entities
     } else {
-      name = n.label ?? n.id;
+      baseColor = '#a855f7'; // purple for concepts (was tags)
     }
-
-    const baseColor = colorForType(nodeType);
 
     return {
       id: n.id,
-      name,
-      val: 1,
-      node_type: nodeType,
-      section_num: n.section_num,
-      section_heading: n.section_heading ?? null,
+      name: n.name,
+      node_type: n.node_type,
+      val: degree,
+      totalVal: degree,
+      
+      // New index/section fields
+      index_type: n.index_type,
       title: n.title,
-      title_heading: n.title_heading ?? null,
-      terms: n.terms ?? null,
-      tags: n.tags ?? null,
-      aux_verbs: n.aux_verbs ?? null,
-      section_text: n.section_text ?? null,
+      part: n.part,
+      chapter: n.chapter,
+      subchapter: n.subchapter,
+      section: n.section,
+      full_name: n.full_name,
+      text: n.text,
+      
+      // New term fields
+      term_type: n.term_type,
+      
+      // Legacy fields (for backward compatibility)
+      section_num: n.section_num,
+      section_heading: n.section_heading,
+      section_text: n.text,  // Map 'text' to 'section_text' for compatibility
+      title_num: n.title ? parseInt(n.title) : undefined,
+      title_heading: n.title_heading,
       department: n.department ?? null,
       total_mentions: n.total_mentions ?? null,
       entity: n.entity ?? null,
+      tag: n.tag ?? null,
+      tags: n.tags ?? null,
+      terms: n.terms ?? null,
+      
       color: baseColor,
       baseColor,
     };
   });
 
   const links: GraphLink[] = raw.links.map((l) => {
-    const edgeType = l.edge_type ?? 'relationship';
+    const edgeType = l.edge_type ?? 'reference';
     return {
       source: l.source,
       target: l.target,
-      action: edgeType,
+      action: l.action || edgeType,
       edge_type: edgeType,
       weight: l.weight ?? 1,
+      definition: l.definition,  // Include definition text if present
     };
   });
 
   cachedGraph = { nodes, links };
   return cachedGraph;
-}
-
-// Helper to build a lookup map from node id -> GraphNode
-async function getNodeMap(): Promise<Map<string, GraphNode>> {
-  const graph = await loadGraph();
-  const map = new Map<string, GraphNode>();
-  for (const node of graph.nodes) {
-    map.set(node.id, node);
-  }
-  return map;
-}
-
-// Helper: convert links to Relationship objects (for lists, sidebars, etc.)
-async function buildRelationshipsFromLinks(
-  links: GraphLink[],
-): Promise<Relationship[]> {
-  const nodeMap = await getNodeMap();
-
-  return links.map((link, idx) => {
-    const sourceNode = nodeMap.get(link.source);
-    const targetNode = nodeMap.get(link.target);
-
-    const actor_id = sourceNode?.id ?? String(link.source);
-    const target_id = targetNode?.id ?? String(link.target);
-
-    const actorLabel = sourceNode?.name ?? String(link.source);
-    const targetLabel = targetNode?.name ?? String(link.target);
-
-    return {
-      id: idx,
-      doc_id: actor_id, // generic id, RightSidebar uses neighbor node id for full text
-      timestamp: null,
-      actor: actorLabel,
-      action: link.action ?? link.edge_type ?? 'relationship',
-      target: targetLabel,
-      location: null,
-      tags: [],
-      actor_type: sourceNode?.node_type,
-      target_type: targetNode?.node_type,
-      actor_id,
-      target_id,
-    };
-  });
-}
-
-// --- Public API functions ---
-
-export async function fetchStats(): Promise<Stats> {
-  const graph = await loadGraph();
-
-  const totalDocumentsCount =
-    graph.nodes.filter((n) => n.node_type === 'section').length ||
-    graph.nodes.length;
-
-  const totalActorsCount =
-    graph.nodes.filter((n) => n.node_type === 'entity' || n.node_type === 'tag').length ||
-    graph.nodes.length;
-
-  const totalTriplesCount = graph.links.length;
-
-  const countsByEdgeType: Record<string, number> = {};
-  for (const link of graph.links) {
-    const key = link.edge_type ?? link.action ?? 'relationship';
-    countsByEdgeType[key] = (countsByEdgeType[key] || 0) + 1;
-  }
-
-  const categories = Object.entries(countsByEdgeType).map(([category, count]) => ({
-    category,
-    count,
-  }));
-
-  return {
-    totalDocuments: { count: totalDocumentsCount },
-    totalTriples: { count: totalTriplesCount },
-    totalActors: { count: totalActorsCount },
-    categories,
-  };
-}
-
-export async function fetchTagClusters(): Promise<TagCluster[]> {
-  const graph = await loadGraph();
-  const tagNodes = graph.nodes.filter((n) => n.node_type === 'tag');
-
-  const exemplars = tagNodes.slice(0, 10).map((n) => n.name);
-
-  const clusters: TagCluster[] = [
-    {
-      id: 1,
-      name: 'Tags',
-      exemplars,
-      tagCount: tagNodes.length,
-    },
-  ];
-
-  return clusters;
 }
 
 export async function fetchRelationships(
@@ -224,56 +125,55 @@ export async function fetchRelationships(
   yearRange: [number, number],
   includeUndated: boolean,
   keywords: string,
-  maxHops: number | null,
+  maxHops: number | null
 ): Promise<{ relationships: Relationship[]; totalBeforeLimit: number }> {
-  const graph = await loadGraph();
+  if (!cachedGraph) {
+    await loadGraph();
+  }
 
-  let links = graph.links;
+  if (!cachedGraph) {
+    return { relationships: [], totalBeforeLimit: 0 };
+  }
 
+  // Filter links by categories (edge types)
+  let filteredLinks = cachedGraph.links;
   if (categories.length > 0) {
-    const catSet = new Set(categories);
-    links = links.filter((l) => {
-      const key = l.edge_type ?? l.action ?? 'relationship';
-      return catSet.has(key);
-    });
+    filteredLinks = filteredLinks.filter((link) =>
+      categories.includes(link.edge_type)
+    );
   }
 
-  const allRelationships = await buildRelationshipsFromLinks(links);
-  const totalBeforeLimit = allRelationships.length;
-  const relationships = allRelationships.slice(0, limit);
+  // Build node map for lookups
+  const nodeMap = new Map(cachedGraph.nodes.map((n) => [n.id, n]));
 
-  return { relationships, totalBeforeLimit };
-}
+  // Convert links to relationships
+  const relationships: Relationship[] = filteredLinks.slice(0, limit).map((link, idx) => {
+    const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+    const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+    const sourceNode = nodeMap.get(sourceId);
+    const targetNode = nodeMap.get(targetId);
 
-export async function fetchActorCounts(
-  topN: number,
-): Promise<Record<string, number>> {
-  const graph = await loadGraph();
-  const nodeMap = await getNodeMap();
+    return {
+      id: idx,
+      doc_id: sourceId,
+      timestamp: link.timestamp || null,
+      actor: sourceNode?.name || sourceId,
+      action: link.action,
+      target: targetNode?.name || targetId,
+      location: link.location || null,
+      tags: [],
+      actor_type: sourceNode?.node_type,
+      target_type: targetNode?.node_type,
+      actor_id: sourceId,
+      target_id: targetId,
+      definition: link.definition,  // Include definition if present
+    };
+  });
 
-  const degreeByName: Record<string, number> = {};
-
-  for (const link of graph.links) {
-    const sourceNode = nodeMap.get(link.source);
-    const targetNode = nodeMap.get(link.target);
-
-    const sourceName = sourceNode?.name ?? String(link.source);
-    const targetName = targetNode?.name ?? String(link.target);
-
-    degreeByName[sourceName] = (degreeByName[sourceName] || 0) + 1;
-    degreeByName[targetName] = (degreeByName[targetName] || 0) + 1;
-  }
-
-  const sorted = Object.entries(degreeByName)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, topN);
-
-  const result: Record<string, number> = {};
-  for (const [name, count] of sorted) {
-    result[name] = count;
-  }
-
-  return result;
+  return {
+    relationships,
+    totalBeforeLimit: filteredLinks.length,
+  };
 }
 
 export async function fetchActorRelationships(
@@ -283,100 +183,148 @@ export async function fetchActorRelationships(
   yearRange: [number, number],
   includeUndated: boolean,
   keywords: string,
-  maxHops: number | null,
+  maxHops: number | null
 ): Promise<{ relationships: Relationship[]; totalBeforeFilter: number }> {
-  const graph = await loadGraph();
-
-  let links = graph.links;
-
-  if (categories.length > 0) {
-    const catSet = new Set(categories);
-    links = links.filter((l) => {
-      const key = l.edge_type ?? l.action ?? 'relationship';
-      return catSet.has(key);
-    });
+  if (!cachedGraph) {
+    await loadGraph();
   }
 
-  const allRelationships = await buildRelationshipsFromLinks(links);
+  if (!cachedGraph) {
+    return { relationships: [], totalBeforeFilter: 0 };
+  }
 
-  const filtered = allRelationships.filter(
-    (r) => r.actor === actorName || r.target === actorName,
-  );
+  const nodeMap = new Map(cachedGraph.nodes.map((n) => [n.id, n]));
+  const actorNode = Array.from(nodeMap.values()).find((n) => n.name === actorName);
 
-  const totalBeforeFilter = filtered.length;
+  if (!actorNode) {
+    return { relationships: [], totalBeforeFilter: 0 };
+  }
 
-  return { relationships: filtered, totalBeforeFilter };
+  // Find all links involving this node
+  let relatedLinks = cachedGraph.links.filter((link) => {
+    const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+    const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+    return sourceId === actorNode.id || targetId === actorNode.id;
+  });
+
+  // Filter by categories
+  if (categories.length > 0) {
+    relatedLinks = relatedLinks.filter((link) =>
+      categories.includes(link.edge_type)
+    );
+  }
+
+  const relationships: Relationship[] = relatedLinks.map((link, idx) => {
+    const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+    const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+    const sourceNode = nodeMap.get(sourceId);
+    const targetNode = nodeMap.get(targetId);
+
+    return {
+      id: idx,
+      doc_id: sourceId,
+      timestamp: link.timestamp || null,
+      actor: sourceNode?.name || sourceId,
+      action: link.action,
+      target: targetNode?.name || targetId,
+      location: link.location || null,
+      tags: [],
+      actor_type: sourceNode?.node_type,
+      target_type: targetNode?.node_type,
+      actor_id: sourceId,
+      target_id: targetId,
+      definition: link.definition,
+    };
+  });
+
+  return {
+    relationships,
+    totalBeforeFilter: relatedLinks.length,
+  };
+}
+
+export async function fetchActorCounts(limit: number): Promise<Record<string, number>> {
+  if (!cachedGraph) {
+    await loadGraph();
+  }
+
+  if (!cachedGraph) {
+    return {};
+  }
+
+  const counts: Record<string, number> = {};
+  cachedGraph.nodes.forEach((node) => {
+    counts[node.name] = node.val || 0;
+  });
+
+  return counts;
 }
 
 export async function searchActors(query: string): Promise<Actor[]> {
-  const graph = await loadGraph();
-
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-
-  const matches: Actor[] = [];
-
-  for (const node of graph.nodes) {
-    const name = node.name ?? node.id;
-    if (name.toLowerCase().includes(q)) {
-      const degree = graph.links.reduce((acc, link) => {
-        if (link.source === node.id || link.target === node.id) {
-          return acc + 1;
-        }
-        return acc;
-      }, 0);
-
-      matches.push({
-        name,
-        connection_count: degree,
-      });
-    }
+  if (!cachedGraph) {
+    await loadGraph();
   }
 
-  matches.sort((a, b) => b.connection_count - a.connection_count);
-  return matches.slice(0, 50);
+  if (!cachedGraph) {
+    return [];
+  }
+
+  const lowerQuery = query.toLowerCase();
+  const matches = cachedGraph.nodes
+    .filter((node) => node.name.toLowerCase().includes(lowerQuery))
+    .map((node) => ({
+      name: node.name,
+      connection_count: node.val || 0,
+    }))
+    .sort((a, b) => b.connection_count - a.connection_count)
+    .slice(0, 20);
+
+  return matches;
 }
 
-export async function fetchActorCount(name: string): Promise<number> {
-  const counts = await fetchActorCounts(10000);
-  return counts[name] ?? 0;
-}
-
-// Node details for right sidebar (section/entity/tag metadata)
-export async function fetchNodeDetails(nodeId: string): Promise<GraphNode | null> {
-  const graph = await loadGraph();
-  const node = graph.nodes.find(n => n.id === nodeId);
-  return node ?? null;
-}
-
-// Stub document metadata (not heavily used in US Code view)
 export async function fetchDocument(docId: string): Promise<Document> {
+  if (!cachedGraph) {
+    await loadGraph();
+  }
+
+  const node = cachedGraph?.nodes.find((n) => n.id === docId);
+
   return {
     doc_id: docId,
     file_path: '',
     one_sentence_summary: `US Code node ${docId}`,
-    paragraph_summary:
-      'Details for this node are derived from the US Code network data.',
+    paragraph_summary: 'Details for this node are derived from the US Code network data.',
     category: 'US Code',
     date_range_earliest: null,
     date_range_latest: null,
+    full_name: node?.full_name,
+    text: node?.text,
+    title: node?.title,
+    part: node?.part,
+    chapter: node?.chapter,
+    subchapter: node?.subchapter,
+    section: node?.section,
   };
 }
 
-// Full text for a section node
-export async function fetchDocumentText(
-  docId: string,
-): Promise<{ text: string }> {
-  const graph = await loadGraph();
-  const node = graph.nodes.find(n => n.id === docId);
-
-  if (node && node.node_type === 'section' && node.section_text) {
-    return { text: String(node.section_text) };
+export async function fetchDocumentText(docId: string): Promise<{ text: string }> {
+  if (!cachedGraph) {
+    await loadGraph();
   }
 
-  return {
-    text: 'Full text is not available for this node in this demo.',
-  };
+  const node = cachedGraph?.nodes.find((n) => n.id === docId);
+  
+  // Use 'text' field, fallback to 'section_text' for compatibility
+  const text = node?.text || node?.section_text || 'No text available for this node.';
+
+  return { text };
 }
 
-export { loadGraph };
+export async function fetchNodeDetails(nodeId: string): Promise<any> {
+  if (!cachedGraph) {
+    await loadGraph();
+  }
+
+  const node = cachedGraph?.nodes.find((n) => n.id === nodeId);
+  return node || null;
+}

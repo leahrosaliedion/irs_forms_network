@@ -356,8 +356,8 @@ const loadData = async () => {
       const builderState: NetworkBuilderState = {
         searchTerms: terms,
         searchFields: params.searchFields,
-        allowedNodeTypes: params.nodeTypes as ('section' | 'entity' | 'tag')[],
-        allowedEdgeTypes: params.edgeTypes as ('citation' | 'section_entity' | 'section_tag')[],
+        allowedNodeTypes: params.nodeTypes as ('section' | 'entity' | 'concept')[],
+        allowedEdgeTypes: params.edgeTypes as ('definition' | 'reference' | 'hierarchy')[],
         allowedTitles: [],
         allowedSections: [],
         seedNodeIds: [],

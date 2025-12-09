@@ -229,6 +229,14 @@ export default function RightSidebar({
                   {/* Expanded node metadata */}
                   {isExpanded && (
                     <div className="px-4 pb-4 bg-gray-700/10">
+
+                      {rel.definition && (
+      <div className="mb-3 p-2 bg-blue-900/20 border border-blue-700/30 rounded">
+        <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
+        <div className="text-xs text-gray-300">{rel.definition}</div>
+      </div>
+    )}
+
                       {neighborDetails === undefined && (
                         <div className="text-xs text-gray-500">
                           Loading node details...
@@ -236,42 +244,53 @@ export default function RightSidebar({
                       )}
 
                       {neighborDetails && neighborDetails.node_type === 'section' && (
-                        <>
-                          <div className="text-xs text-gray-400 mb-1">
-                            Section details (excluding full text)
-                          </div>
-                          <div className="text-sm text-gray-200 mb-1">
-                            <span className="font-semibold">
-                              § {neighborDetails.section_num}{' '}
-                            </span>
-                            {neighborDetails.section_heading}
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            <div>
-                              <span className="font-semibold">Title:</span>{' '}
-                              {neighborDetails.title} – {neighborDetails.title_heading}
-                            </div>
-                            {neighborDetails.tags && (
-                              <div className="mt-1">
-                                <span className="font-semibold">Tags:</span>{' '}
-                                {neighborDetails.tags}
-                              </div>
-                            )}
-                            {neighborDetails.terms && (
-                              <div className="mt-1">
-                                <span className="font-semibold">Key terms:</span>{' '}
-                                {neighborDetails.terms}
-                              </div>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => setDocumentToView(neighborDetails.id)}
-                            className="mt-3 text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors"
-                          >
-                            View full section text
-                          </button>
-                        </>
-                      )}
+  <>
+    <div className="text-xs text-gray-400 mb-1">
+      Section details (excluding full text)
+    </div>
+    <div className="text-sm text-gray-200 mb-1">
+      {neighborDetails.full_name && (
+        <div className="font-semibold mb-1">
+          {neighborDetails.full_name}
+        </div>
+      )}
+      {neighborDetails.section_num && (
+        <span className="font-semibold">
+          § {neighborDetails.section_num}{' '}
+        </span>
+      )}
+      {neighborDetails.section_heading}
+    </div>
+    <div className="text-xs text-gray-400">
+      {neighborDetails.title && (
+        <div>
+          <span className="font-semibold">Title:</span>{' '}
+          {neighborDetails.title}
+          {neighborDetails.title_heading && ` – ${neighborDetails.title_heading}`}
+        </div>
+      )}
+      {neighborDetails.tags && (
+        <div className="mt-1">
+          <span className="font-semibold">Tags:</span>{' '}
+          {neighborDetails.tags}
+        </div>
+      )}
+      {neighborDetails.terms && (
+        <div className="mt-1">
+          <span className="font-semibold">Key terms:</span>{' '}
+          {neighborDetails.terms}
+        </div>
+      )}
+    </div>
+    <button
+      onClick={() => setDocumentToView(neighborDetails.id)}
+      className="mt-3 text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors"
+    >
+      View full section text
+    </button>
+  </>
+)}
+
 
                       {neighborDetails && neighborDetails.node_type === 'entity' && (
                         <div className="text-xs text-gray-400">

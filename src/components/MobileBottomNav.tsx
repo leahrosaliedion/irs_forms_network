@@ -461,6 +461,7 @@ export default function MobileBottomNav({
                     : rel.actor
                   : rel.target
               }
+              searchKeywords={undefined}
               onClose={() => setDocumentToView(null)}
             />
           ) : null;

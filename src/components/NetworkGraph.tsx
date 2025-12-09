@@ -16,13 +16,13 @@ interface NetworkGraphProps {
 function baseColorForType(t?: NodeType): string {
   switch (t) {
     case 'section':
-      return '#60a5fa'; // blue
+      return '#41378F'; // ink
     case 'entity':
-      return '#f97316'; // orange
-    case 'tag':
-      return '#a855f7'; // purple
+      return '#F0A734'; // orange
+    case 'concept':
+      return '#9C3391'; // magenta
     default:
-      return '#6b7280'; // gray
+      return '#AFBBE8'; // steel
   }
 }
 
@@ -114,13 +114,13 @@ export default function NetworkGraph({
     const strength = (v: number) => v / maxVal;
 
     const sectionColorScale = d3.scaleSequential((t: number) =>
-      d3.interpolateRgb('#bfdbfe', '#1d4ed8')(t)
+      d3.interpolateRgb('#9B96C9', '#41378F')(t)
     );
     const entityColorScale = d3.scaleSequential((t: number) =>
-      d3.interpolateRgb('#fed7aa', '#b91c1c')(t)
+      d3.interpolateRgb('#F9D99B', '#F0A734')(t)
     );
-    const tagColorScale = d3.scaleSequential((t: number) =>
-      d3.interpolateRgb('#e9d5ff', '#6d28d9')(t)
+    const conceptColorScale = d3.scaleSequential((t: number) =>
+      d3.interpolateRgb('#E8B3E3', '#9C3391')(t)
     );
 
     const nodes = allNodes.map(node => {
@@ -131,8 +131,8 @@ export default function NetworkGraph({
         color = sectionColorScale(t);
       } else if (node.node_type === 'entity') {
         color = entityColorScale(t);
-      } else if (node.node_type === 'tag') {
-        color = tagColorScale(t);
+      } else if (node.node_type === 'concept') {
+        color = conceptColorScale(t);
       }
 
       return {

@@ -20,100 +20,119 @@ export class NetworkBuilder {
   }
 
   /**
- * Multi-field keyword search with case-insensitive matching and AND/OR logic
- */
-searchNodes(searchTerms: string[], searchFields: string[], logic: 'AND' | 'OR' = 'OR'): Set<string> {
-  const matchedIds = new Set<string>();
-  const normalizedTerms = searchTerms.map(t => t.toLowerCase().trim());
+   * Multi-field keyword search with case-insensitive matching and AND/OR logic
+   */
+  searchNodes(searchTerms: string[], searchFields: string[], logic: 'AND' | 'OR' = 'OR'): Set<string> {
+    const matchedIds = new Set<string>();
+    const normalizedTerms = searchTerms.map(t => t.toLowerCase().trim());
 
-  console.log('Searching for terms:', normalizedTerms);
-  console.log('Searching in fields:', searchFields);
-  console.log('Search logic:', logic);
+    console.log('Searching for terms:', normalizedTerms);
+    console.log('Searching in fields:', searchFields);
+    console.log('Search logic:', logic);
 
-  this.allNodes.forEach(node => {
-    if (logic === 'OR') {
-      // OR logic: match if ANY term appears in ANY field
-      const shouldMatch = normalizedTerms.some(term => {
-        return searchFields.some(field => {
-          let value: any;
-          
-          switch(field) {
-            case 'section_text':
-              value = node.section_text;
-              break;
-            case 'section_heading':
-              value = node.section_heading;
-              break;
-            case 'section_num':
-              value = node.section_num;
-              break;
-            case 'entity':
-              value = node.node_type === 'entity' ? (node.entity || node.name) : null;
-              break;
-            case 'tag':
-              value = node.node_type === 'tag' ? (node.tag || node.name) : null;
-              break;
-            default:
-              value = (node as any)[field];
-          }
+    this.allNodes.forEach(node => {
+      if (logic === 'OR') {
+        // OR logic: match if ANY term appears in ANY field
+        const shouldMatch = normalizedTerms.some(term => {
+          return searchFields.some(field => {
+            let value: any;
+            
+            switch(field) {
+              case 'section_text':
+                // Check both 'text' (new) and 'section_text' (legacy)
+                value = node.text || node.section_text;
+                break;
+              case 'text':
+                value = node.text || node.section_text;
+                break;
+              case 'section_heading':
+                value = node.section_heading;
+                break;
+              case 'section_num':
+                value = node.section_num;
+                break;
+              case 'full_name':
+                value = node.full_name;
+                break;
+              case 'entity':
+                value = node.node_type === 'entity' ? (node.entity || node.name) : null;
+                break;
+              case 'tag':
+              case 'concept':
+                // Support both 'tag' and 'concept' for backward compatibility
+                value = (node.node_type === 'concept' || node.node_type === 'tag') 
+                  ? (node.tag || node.name) 
+                  : null;
+                break;
+              default:
+                value = (node as any)[field];
+            }
 
-          if (value === null || value === undefined) {
-            return false;
-          }
+            if (value === null || value === undefined) {
+              return false;
+            }
 
-          const stringValue = String(value).toLowerCase();
-          return stringValue.includes(term);
+            const stringValue = String(value).toLowerCase();
+            return stringValue.includes(term);
+          });
         });
-      });
 
-      if (shouldMatch) {
-        matchedIds.add(node.id);
-      }
-    } else {
-      // AND logic: match if ALL terms appear (in ANY of the allowed fields)
-      const allTermsMatch = normalizedTerms.every(term => {
-        return searchFields.some(field => {
-          let value: any;
-          
-          switch(field) {
-            case 'section_text':
-              value = node.section_text;
-              break;
-            case 'section_heading':
-              value = node.section_heading;
-              break;
-            case 'section_num':
-              value = node.section_num;
-              break;
-            case 'entity':
-              value = node.node_type === 'entity' ? (node.entity || node.name) : null;
-              break;
-            case 'tag':
-              value = node.node_type === 'tag' ? (node.tag || node.name) : null;
-              break;
-            default:
-              value = (node as any)[field];
-          }
+        if (shouldMatch) {
+          matchedIds.add(node.id);
+        }
+      } else {
+        // AND logic: match if ALL terms appear (in ANY of the allowed fields)
+        const allTermsMatch = normalizedTerms.every(term => {
+          return searchFields.some(field => {
+            let value: any;
+            
+            switch(field) {
+              case 'section_text':
+                value = node.text || node.section_text;
+                break;
+              case 'text':
+                value = node.text || node.section_text;
+                break;
+              case 'section_heading':
+                value = node.section_heading;
+                break;
+              case 'section_num':
+                value = node.section_num;
+                break;
+              case 'full_name':
+                value = node.full_name;
+                break;
+              case 'entity':
+                value = node.node_type === 'entity' ? (node.entity || node.name) : null;
+                break;
+              case 'tag':
+              case 'concept':
+                value = (node.node_type === 'concept' || node.node_type === 'tag') 
+                  ? (node.tag || node.name) 
+                  : null;
+                break;
+              default:
+                value = (node as any)[field];
+            }
 
-          if (value === null || value === undefined) {
-            return false;
-          }
+            if (value === null || value === undefined) {
+              return false;
+            }
 
-          const stringValue = String(value).toLowerCase();
-          return stringValue.includes(term);
+            const stringValue = String(value).toLowerCase();
+            return stringValue.includes(term);
+          });
         });
-      });
 
-      if (allTermsMatch) {
-        matchedIds.add(node.id);
+        if (allTermsMatch) {
+          matchedIds.add(node.id);
+        }
       }
-    }
-  });
+    });
 
-  console.log(`Found ${matchedIds.size} matching nodes using ${logic} logic`);
-  return matchedIds;
-}
-
+    console.log(`Found ${matchedIds.size} matching nodes using ${logic} logic`);
+    return matchedIds;
+  }
 
   /**
    * Filter nodes by type, title, or section
@@ -131,10 +150,11 @@ searchNodes(searchTerms: string[], searchFields: string[], logic: 'AND' | 'OR' =
                        allowedNodeTypes.includes(node.node_type);
       
       // Title filter - if empty, allow all
+      // Check both title_num (legacy) and parsed title (new)
       const titleMatch = allowedTitles.length === 0 || 
                         (node.node_type === 'section' && 
-                         node.title_num && 
-                         allowedTitles.includes(node.title_num));
+                         ((node.title_num && allowedTitles.includes(node.title_num)) ||
+                          (node.title && allowedTitles.includes(parseInt(node.title)))));
       
       // Section number filter - if empty, allow all
       const sectionMatch = allowedSections.length === 0 || 
