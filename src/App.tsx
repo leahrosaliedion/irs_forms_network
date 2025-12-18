@@ -142,28 +142,34 @@ function App() {
     loadGraphData();
   }, []);
 
-  // Load tag clusters and stats on mount
-  useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        const [clusters, statsData] = await Promise.all([
-          fetchTagClusters(),
-          fetchStats()
-        ]);
+ // Compute stats from loaded graph data
+useEffect(() => {
+  if (fullGraph.nodes.length > 0) {
+    const indexNodes = fullGraph.nodes.filter(n => n.node_type === 'index').length;
+    const entityNodes = fullGraph.nodes.filter(n => n.node_type === 'entity').length;
+    const conceptNodes = fullGraph.nodes.filter(n => n.node_type === 'concept').length;
+    
+    const definitionLinks = fullGraph.links.filter(l => l.edge_type === 'definition').length;
+    const referenceLinks = fullGraph.links.filter(l => l.edge_type === 'reference').length;
+    const hierarchyLinks = fullGraph.links.filter(l => l.edge_type === 'hierarchy').length;
+    
+    setStats({
+      totalDocuments: { count: indexNodes },  // Index/section nodes only
+      totalTriples: { count: fullGraph.links.length },
+      totalActors: { count: entityNodes + conceptNodes },  // Entity + concept nodes
+      categories: [
+        { category: 'definition', count: definitionLinks },
+        { category: 'reference', count: referenceLinks },
+        { category: 'hierarchy', count: hierarchyLinks }
+      ]
+    });
+    
+    setEnabledCategories(new Set(['definition', 'reference', 'hierarchy']));
+    setIsInitialized(true);
+  }
+}, [fullGraph]);
 
-        queueMicrotask(() => {
-          setTagClusters(clusters);
-          setEnabledClusterIds(new Set(clusters.map(c => c.id)));
-          setStats(statsData);
-          setEnabledCategories(new Set(statsData.categories.map(c => c.category)));
-          setIsInitialized(true);
-        });
-      } catch (error) {
-        console.error('Error initializing app:', error);
-      }
-    };
-    initializeApp();
-  }, []);
+
 
   // Load data when filters change (only in top-down mode)
   useEffect(() => {

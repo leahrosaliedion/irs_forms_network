@@ -6,10 +6,9 @@
   "homepage": "https://leahrosaliedion.github.io/US-Code_Network",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
+    "build": "tsc && vite build",
     "preview": "vite preview",
-    "deploy": "vite build && gh-pages -d dist"
+    "deploy": "npm run build && gh-pages -d dist"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",
