@@ -49,7 +49,6 @@ function App() {
     matchedCount: number;
   } | null>(null);
 
-
   // Existing state
   const [stats, setStats] = useState<Stats | null>(null);
   const [tagClusters, setTagClusters] = useState<TagCluster[]>([]);
@@ -69,6 +68,8 @@ function App() {
   const [includeUndated, setIncludeUndated] = useState(false);
   const [keywords, setKeywords] = useState('');
   const [actorTotalCounts, setActorTotalCounts] = useState<Record<string, number>>({});
+  const [categoryFilter, setCategoryFilter] = useState<Set<'individual' | 'corporation'>>(
+  new Set(['individual']));
   const [showWelcome, setShowWelcome] = useState(() => {
     return !localStorage.getItem('hasSeenWelcome');
   });
@@ -93,6 +94,7 @@ function App() {
         target_type: targetNode?.node_type,
         actor_id: sourceNode?.id,
         target_id: targetNode?.id,
+        edge_type: link.edge_type,
       };
     });
   }, []);
@@ -101,14 +103,14 @@ function App() {
   useEffect(() => {
     const loadGraphData = async () => {
       try {
-        console.log('Loading graph data for network builder...');
+        console.log('Loading IRS forms graph data for network builder...');
         
         const apiModule = await import('./api');
         
         if (typeof apiModule.loadGraph === 'function') {
           const data = await apiModule.loadGraph();
           
-          console.log('✅ Graph data loaded successfully:', {
+          console.log('✅ IRS forms graph data loaded successfully:', {
             nodes: data.nodes.length,
             links: data.links.length,
             sampleNode: data.nodes[0]
@@ -127,11 +129,11 @@ function App() {
           throw new Error('loadGraph function not found in api module');
         }
       } catch (err) {
-        console.error('❌ Failed to load graph data:', err);
+        console.error('❌ Failed to load IRS forms graph data:', err);
         
         if (err instanceof Error) {
           if (err.message.includes('404') || err.message.includes('Failed to load graph data')) {
-            console.error('📝 Make sure title26_graph.json exists in the /public folder');
+            console.error('📝 Make sure irs_forms_network.json exists in the /public folder');
           }
         }
         
@@ -142,50 +144,58 @@ function App() {
     loadGraphData();
   }, []);
 
- // Compute stats from loaded graph data
-useEffect(() => {
-  if (fullGraph.nodes.length > 0) {
-    const indexNodes = fullGraph.nodes.filter(n => n.node_type === 'index').length;
-    const entityNodes = fullGraph.nodes.filter(n => n.node_type === 'entity').length;
-    const conceptNodes = fullGraph.nodes.filter(n => n.node_type === 'concept').length;
-    
-    const definitionLinks = fullGraph.links.filter(l => l.edge_type === 'definition').length;
-    const referenceLinks = fullGraph.links.filter(l => l.edge_type === 'reference').length;
-    const hierarchyLinks = fullGraph.links.filter(l => l.edge_type === 'hierarchy').length;
-    
-    setStats({
-      totalDocuments: { count: indexNodes },  // Index/section nodes only
-      totalTriples: { count: fullGraph.links.length },
-      totalActors: { count: entityNodes + conceptNodes },  // Entity + concept nodes
-      categories: [
-        { category: 'definition', count: definitionLinks },
-        { category: 'reference', count: referenceLinks },
-        { category: 'hierarchy', count: hierarchyLinks }
-      ]
-    });
-    
-    setEnabledCategories(new Set(['definition', 'reference', 'hierarchy']));
-    setIsInitialized(true);
-  }
-}, [fullGraph]);
-
-
+  // Compute stats from loaded graph data
+  useEffect(() => {
+    if (fullGraph.nodes.length > 0) {
+      // Count by IRS forms node types
+      const formNodes = fullGraph.nodes.filter(n => n.node_type === 'form').length;
+      const lineNodes = fullGraph.nodes.filter(n => n.node_type === 'line').length;
+      const sectionNodes = fullGraph.nodes.filter(n => n.node_type === 'section').length;
+      const regulationNodes = fullGraph.nodes.filter(n => n.node_type === 'regulation').length;
+      
+      // Count by IRS forms edge types
+      const belongsToLinks = fullGraph.links.filter(l => l.edge_type === 'belongs_to').length;
+      const citesSectionLinks = fullGraph.links.filter(l => l.edge_type === 'cites_section').length;
+      const citesRegulationLinks = fullGraph.links.filter(l => l.edge_type === 'cites_regulation').length;
+      
+      console.log('📊 IRS Forms Network Stats:', {
+        forms: formNodes,
+        lines: lineNodes,
+        sections: sectionNodes,
+        regulations: regulationNodes,
+        totalNodes: fullGraph.nodes.length,
+        totalLinks: fullGraph.links.length
+      });
+      
+      setStats({
+        totalDocuments: { count: fullGraph.nodes.length },  // All nodes
+        totalTriples: { count: fullGraph.links.length },
+        totalActors: { count: fullGraph.nodes.length },
+        categories: [
+          { category: 'belongs_to', count: belongsToLinks },
+          { category: 'cites_section', count: citesSectionLinks },
+          { category: 'cites_regulation', count: citesRegulationLinks }
+        ]
+      });
+      
+      setEnabledCategories(new Set(['belongs_to', 'cites_section', 'cites_regulation']));
+      setIsInitialized(true);
+    }
+  }, [fullGraph]);
 
   // Load data when filters change (only in top-down mode)
   useEffect(() => {
     if (isInitialized && buildMode === 'top-down') {
       loadData();
     }
-  }, [isInitialized, buildMode, limit, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops]);
+  }, [isInitialized, buildMode, limit, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops, categoryFilter]);
 
-
-
-const loadData = async () => {
-
+  const loadData = async () => {
   console.log('=== loadData called ===');
   console.log('limit:', limit);
   console.log('maxHops:', maxHops);
   console.log('enabledCategories:', Array.from(enabledCategories));
+  console.log('categoryFilter:', Array.from(categoryFilter)); // Added
 
   try {
     setLoading(true);
@@ -196,15 +206,27 @@ const loadData = async () => {
       fetchActorCounts(300)
     ]);
     
-    // Apply node count limit if maxHops is set (we're reusing maxHops as maxNodes)
-    let filteredRelationships = relationshipsResponse.relationships;
+    // Apply category filter - NEW
+    let filteredByCategory = relationshipsResponse.relationships;
+    if (categoryFilter.size > 0 && categoryFilter.size < 2) {
+      // Only filter if not both selected
+      const allowedCategories = Array.from(categoryFilter);
+      filteredByCategory = filteredByCategory.filter(rel => {
+        // Check if either actor or target matches allowed categories
+        // This assumes nodes have a category property - you may need to fetch this
+        return true; // For now, we'll filter in the graph rendering
+      });
+    }
     
-    if (maxHops !== null && maxHops < relationshipsResponse.relationships.length) {
+    // Apply node count limit if maxHops is set (we're reusing maxHops as maxNodes)
+    let filteredRelationships = filteredByCategory;
+    
+    if (maxHops !== null && maxHops < filteredRelationships.length) {
       // Build a set of unique nodes from relationships
       const nodeSet = new Set<string>();
       const nodeDegree = new Map<string, number>();
       
-      relationshipsResponse.relationships.forEach(rel => {
+      filteredRelationships.forEach(rel => {
         const actorId = rel.actor_id ?? rel.actor;
         const targetId = rel.target_id ?? rel.target;
         
@@ -225,7 +247,7 @@ const loadData = async () => {
         const allowedNodes = new Set(sortedNodes);
         
         // Filter relationships to only include those between allowed nodes
-        filteredRelationships = relationshipsResponse.relationships.filter(rel => {
+        filteredRelationships = filteredRelationships.filter(rel => {
           const actorId = rel.actor_id ?? rel.actor;
           const targetId = rel.target_id ?? rel.target;
           return allowedNodes.has(actorId) && allowedNodes.has(targetId);
@@ -275,6 +297,10 @@ const loadData = async () => {
       return next;
     });
   }, []);
+
+  const toggleCategoryFilter = useCallback((category: 'individual' | 'corporation') => {
+  setCategoryFilter(new Set([category])); // Always set to exactly one category
+}, []);
 
   const handleCloseWelcome = useCallback(() => {
     localStorage.setItem('hasSeenWelcome', 'true');
@@ -328,7 +354,7 @@ const loadData = async () => {
         setActorTotalBeforeFilter(relationships.length);
       }
     }
-  }, [buildMode, selectedActor, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops, convertGraphToRelationships]);
+  }, [buildMode, selectedActor, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops, displayGraph, convertGraphToRelationships]);
 
   // Handle bottom-up network building
   const handleBottomUpSearch = useCallback((params: {
@@ -339,20 +365,11 @@ const loadData = async () => {
     edgeTypes: string[];
     searchFields: string[];
     searchLogic: 'AND' | 'OR';
+    categoryFilter: string[];
     nodeRankingMode: 'global' | 'subgraph';
   }) => {
-
-  console.log('=== Bottom-up search triggered ===');
-  console.log('Params received:', params);
-  console.log('Edge types:', params.edgeTypes);
-  console.log('Node types:', params.nodeTypes);
-  console.log('Keywords:', params.keywords);
-  
-  if (!builder) {
-    console.error('Builder not initialized yet');
-    alert('Network builder is not ready. Please wait for the data to load.');
-    return;
-  }
+    console.log('=== Bottom-up search triggered ===');
+    console.log('Params received:', params);
 
     if (!builder) {
       console.error('Builder not initialized yet');
@@ -362,22 +379,22 @@ const loadData = async () => {
     
     if (!params.keywords.trim()) {
       console.warn('No search keywords provided');
-      alert('Please enter some keywords to search for (e.g., "tax")');
+      alert('Please enter some keywords to search for (e.g., "1040, income")');
       return;
     }
 
-    if (params.searchFields.length == 0) {
+    if (params.searchFields.length === 0) {
       alert('Please select at least one field to search in.');
       return;
     }
     
     setBottomUpSearchKeywords(params.keywords);
-    
     setLoading(true);
+    
     try {
       const terms = params.keywords.split(',').map(t => t.trim()).filter(t => t);
       
-      console.log('=== Building Bottom-Up Network ===');
+      console.log('=== Building IRS Forms Bottom-Up Network ===');
       console.log('Search keywords:', terms);
       console.log('Search fields:', params.searchFields);
       console.log('Search logic:', params.searchLogic);
@@ -385,14 +402,15 @@ const loadData = async () => {
       console.log('Max nodes:', params.maxNodes);
       console.log('Node type filters:', params.nodeTypes);
       console.log('Edge type filters:', params.edgeTypes);
+      console.log('Category filters:', params.categoryFilter);
       
       const builderState: NetworkBuilderState = {
         searchTerms: terms,
         searchFields: params.searchFields,
-        allowedNodeTypes: params.nodeTypes as ('section' | 'entity' | 'concept')[],
-        allowedEdgeTypes: params.edgeTypes as ('definition' | 'reference' | 'hierarchy')[],
-        allowedTitles: [],
-        allowedSections: [],
+        allowedNodeTypes: params.nodeTypes as ('form' | 'line' | 'section' | 'regulation')[],
+        allowedEdgeTypes: params.edgeTypes as ('belongs_to' | 'cites_section' | 'cites_regulation')[],
+        allowedCategories: params.categoryFilter as ('individual' | 'corporation')[],
+        allowedForms: [],
         seedNodeIds: [],
         expansionDepth: params.expansionDegree,
         maxNodesPerExpansion: 100,
@@ -401,59 +419,43 @@ const loadData = async () => {
       
       const filtered = builder.buildNetwork(builderState, params.searchLogic, params.nodeRankingMode);
       
-	// Add diagnostic logging
-console.log('🎨 Bottom-up graph built:');
-console.log('Sample nodes with colors:', filtered.nodes.slice(0, 5).map(n => ({
-  id: n.id,
-  name: n.name,
-  node_type: n.node_type,
-  color: n.color,
-  baseColor: n.baseColor
-})));
+      console.log('=== Build Complete ===');
+      console.log('Result:', {
+        nodes: filtered.nodes.length,
+        links: filtered.links.length,
+        truncated: filtered.truncated,
+        matchedCount: filtered.matchedCount
+      });
 
-        console.log('=== Build Complete ===');
-console.log('Result:', {
-  nodes: filtered.nodes.length,
-  links: filtered.links.length,
-  truncated: filtered.truncated,
-  matchedCount: filtered.matchedCount
-});
+      if (filtered.nodes.length === 0) {
+        alert(`No nodes matched your search criteria.\n\nTry:\n- Different keywords\n- Fewer filters\n- Higher max nodes limit`);
+      }
 
-if (filtered.nodes.length === 0) {
-  alert(`Graph is empty after filtering. This can happen when:\n- Max nodes is too low\n- Edge type filters remove all connections\n\nTry: Increase max nodes or change edge type filters.`);
-}
+      const actualTruncated = filtered.matchedCount > params.maxNodes;
+      const actualNodeCount = filtered.nodes.length;
 
-// ✅ Calculate if results were truncated by maxNodes limit
-const actualTruncated = filtered.matchedCount > params.maxNodes;
-const actualNodeCount = filtered.nodes.length;
+      setDisplayGraph({
+        nodes: filtered.nodes,
+        links: filtered.links,
+        truncated: actualTruncated,
+        matchedCount: filtered.matchedCount
+      });
 
-setDisplayGraph({
-  nodes: filtered.nodes,
-  links: filtered.links,
-  truncated: actualTruncated,
-  matchedCount: filtered.matchedCount
-});
+      setDisplayGraphInfo({
+        nodeCount: actualNodeCount,
+        truncated: actualTruncated,
+        matchedCount: filtered.matchedCount
+      });
 
-console.log('displayGraph SET with:', filtered.nodes.length, 'nodes');
-
-// ✅ Set the graph info for the sidebar
-setDisplayGraphInfo({
-  nodeCount: actualNodeCount,
-  truncated: actualTruncated,
-  matchedCount: filtered.matchedCount
-});
-
-// Don't set relationships in bottom-up mode - we use displayGraph directly
-setBuildMode('bottom-up');
-
+      setBuildMode('bottom-up');
 
     } catch (error) {
-      console.error('Error building network:', error);
+      console.error('Error building IRS forms network:', error);
       alert('An error occurred while building the network. Check the console for details.');
     } finally {
       setLoading(false);
     }
-  }, [builder, convertGraphToRelationships]);
+  }, [builder]);
 
   // Start new network (switch to bottom-up mode)
   const handleStartNewNetwork = useCallback(() => {
@@ -479,11 +481,10 @@ setBuildMode('bottom-up');
     loadData();
   }, []);
 
-  console.log('=== Rendering NetworkGraph ===');
+  console.log('=== Rendering App ===');
   console.log('buildMode:', buildMode);
   console.log('displayGraph:', { nodes: displayGraph.nodes.length, links: displayGraph.links.length });
   console.log('relationships:', relationships.length);
-
 
   return (
     <div className="flex h-screen bg-gray-900 text-white">
@@ -504,6 +505,8 @@ setBuildMode('bottom-up');
           onToggleCluster={toggleCluster}
           enabledCategories={enabledCategories}
           onToggleCategory={toggleCategory}
+          categoryFilter={categoryFilter}
+          onToggleCategoryFilter={toggleCategoryFilter}
           yearRange={yearRange}
           onYearRangeChange={setYearRange}
           includeUndated={includeUndated}
@@ -521,27 +524,27 @@ setBuildMode('bottom-up');
       {/* Main Graph Area */}
       <div className="flex-1 relative pb-16 lg:pb-0">
         {buildMode === 'bottom-up' && displayGraph.truncated && (
-          <div className="absolute top-4 left-4 z-10 bg-yellow-100 border border-yellow-400 text-yellow-900 px-4 py-2 rounded shadow-lg">
+          <div className="absolute top-4 left-4 z-10 bg-yellow-100 border border-yellow-400 text-yellow-900 px-4 py-2 rounded shadow-lg text-sm">
             ⚠ Showing {displayGraph.nodes.length} of {displayGraph.matchedCount} matching nodes
           </div>
         )}
 
         {loading ? (
-  <div className="flex items-center justify-center h-full bg-[#161400]">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-purple-500 mx-auto mb-4"></div>
-      <p className="text-gray-300">Loading network data...</p>
-    </div>
-  </div>
-) : (
+          <div className="flex items-center justify-center h-full bg-gray-900">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p className="text-gray-300">Loading IRS forms network...</p>
+            </div>
+          </div>
+        ) : (
           <NetworkGraph
-
             graphData={buildMode === 'bottom-up' ? displayGraph : undefined}
             relationships={buildMode === 'top-down' ? relationships : undefined}
             selectedActor={selectedActor}
             onActorClick={handleActorClick}
             minDensity={minDensity}
             actorTotalCounts={actorTotalCounts}
+            categoryFilter={categoryFilter}
           />
         )}
       </div>

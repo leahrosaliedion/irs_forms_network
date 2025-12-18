@@ -13,16 +13,16 @@ import type {
 
 let cachedGraph: GraphData | null = null;
 
-// Mock stats (you can update this based on your actual data later)
+// Stats based on IRS forms network
 export async function fetchStats(): Promise<Stats> {
   return {
-    totalDocuments: { count: 9718 },  // Number of index nodes
-    totalTriples: { count: 44967 },   // Total links
-    totalActors: { count: 9292 },     // Number of term nodes
+    totalDocuments: { count: 4422 },  // Total nodes
+    totalTriples: { count: 8210 },    // Total links
+    totalActors: { count: 4422 },     // All nodes are "actors"
     categories: [
-      { category: 'definition', count: 478 },
-      { category: 'reference', count: 34772 },
-      { category: 'hierarchy', count: 9717 },
+      { category: 'belongs_to', count: 1542 },
+      { category: 'cites_section', count: 5216 },
+      { category: 'cites_regulation', count: 1452 },
     ],
   };
 }
@@ -32,12 +32,15 @@ export async function fetchTagClusters(): Promise<TagCluster[]> {
   return [];
 }
 
-export async function loadGraph(): Promise<GraphData> {
-  const res = await fetch(`${import.meta.env.BASE_URL}title26_graph.json`);
+export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLink[] }> {
+  const res = await fetch(`${import.meta.env.BASE_URL}irs_forms_network.json`);
   if (!res.ok) {
     throw new Error('Failed to load graph data');
   }
   const raw = (await res.json()) as { nodes: any[]; links: any[] };
+
+  console.log('📊 Loading IRS forms graph...');
+  console.log(`Raw data: ${raw.nodes.length} nodes, ${raw.links.length} links`);
 
   // Compute degree for each node
   const degreeMap = new Map<string, number>();
@@ -53,70 +56,75 @@ export async function loadGraph(): Promise<GraphData> {
   // Build nodes with colors based on type and degree
   const nodes: GraphNode[] = raw.nodes.map((n) => {
     const degree = degreeMap.get(n.id) || 0;
-    const normalizedDegree = degree / maxDegree;
 
+    // Color assignment based on IRS forms node types
     let baseColor: string;
-    if (n.node_type === 'section') {
-      baseColor = '#3b82f6'; // blue for sections
-    } else if (n.node_type === 'entity') {
-      baseColor = '#f97316'; // orange for entities
+    if (n.type === 'form') {
+      baseColor = '#8B5CF6'; // purple for forms
+    } else if (n.type === 'line') {
+      baseColor = '#F97316'; // orange for lines
+    } else if (n.type === 'section') {
+      baseColor = '#06B6D4'; // cyan for sections
+    } else if (n.type === 'regulation') {
+      baseColor = '#EC4899'; // pink for regulations
     } else {
-      baseColor = '#a855f7'; // purple for concepts (was tags)
+      baseColor = '#AFBBE8'; // fallback steel color
     }
 
     return {
       id: n.id,
       name: n.name,
-      node_type: n.node_type,
+      node_type: n.type,
+      category: n.category,
       val: degree,
       totalVal: degree,
-
-      display_label: n.display_label,
-
-      properties: n.properties,
-      
-      // New index/section fields
-      index_type: n.index_type,
-      title: n.title,
-      part: n.part,
-      chapter: n.chapter,
-      subchapter: n.subchapter,
-      section: n.section,
+      amount: n.amount,
+      num_forms: n.num_forms,
+      properties: {
+        full_name: n.full_name,
+        text: n.text,
+        definition: n.definition,
+        ...n.properties,
+      },
       full_name: n.full_name,
       text: n.text,
-      
-      // New term fields
-      term_type: n.term_type,
-      
-      // Legacy fields (for backward compatibility)
-      section_num: n.section_num,
-      section_heading: n.section_heading,
-      section_text: n.text,  // Map 'text' to 'section_text' for compatibility
-      title_num: n.title ? parseInt(n.title) : undefined,
-      title_heading: n.title_heading,
-      department: n.department ?? null,
-      total_mentions: n.total_mentions ?? null,
-      entity: n.entity ?? null,
-      tag: n.tag ?? null,
-      tags: n.tags ?? null,
-      terms: n.terms ?? null,
-      
+      definition: n.definition,
       color: baseColor,
       baseColor,
     };
   });
 
   const links: GraphLink[] = raw.links.map((l) => {
-    const edgeType = l.edge_type ?? 'reference';
+    const edgeType = l.type || 'reference';
+    
+    let action: string;
+    if (edgeType === 'belongs_to') {
+      action = 'belongs to';
+    } else if (edgeType === 'cites_section') {
+      action = 'cites section';
+    } else if (edgeType === 'cites_regulation') {
+      action = 'cites regulation';
+    } else {
+      action = edgeType;
+    }
+
     return {
       source: l.source,
       target: l.target,
-      action: l.action || edgeType,
+      action: action,
       edge_type: edgeType,
       weight: l.weight ?? 1,
-      definition: l.definition,  // Include definition text if present
+      definition: l.definition,
     };
   });
+
+  console.log(`✅ Loaded ${nodes.length} nodes, ${links.length} links`);
+  console.log('Node type breakdown:', 
+    nodes.reduce((acc, n) => {
+      acc[n.node_type] = (acc[n.node_type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>)
+  );
 
   cachedGraph = { nodes, links };
   return cachedGraph;
@@ -139,7 +147,6 @@ export async function fetchRelationships(
     return { relationships: [], totalBeforeLimit: 0 };
   }
 
-  // Filter links by categories (edge types)
   let filteredLinks = cachedGraph.links;
   if (categories.length > 0) {
     filteredLinks = filteredLinks.filter((link) =>
@@ -147,10 +154,8 @@ export async function fetchRelationships(
     );
   }
 
-  // Build node map for lookups
   const nodeMap = new Map(cachedGraph.nodes.map((n) => [n.id, n]));
 
-  // Convert links to relationships
   const relationships: Relationship[] = filteredLinks.slice(0, limit).map((link, idx) => {
     const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
     const targetId = typeof link.target === 'string' ? link.target : link.target.id;
@@ -170,9 +175,8 @@ export async function fetchRelationships(
       target_type: targetNode?.node_type,
       actor_id: sourceId,
       target_id: targetId,
-      definition: link.definition,  // Include definition if present
-      actor_display_label: sourceNode?.display_label,
-      target_display_label: targetNode?.display_label,
+      definition: link.definition,
+      edge_type: link.edge_type,
     };
   });
 
@@ -206,14 +210,12 @@ export async function fetchActorRelationships(
     return { relationships: [], totalBeforeFilter: 0 };
   }
 
-  // Find all links involving this node
   let relatedLinks = cachedGraph.links.filter((link) => {
     const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
     const targetId = typeof link.target === 'string' ? link.target : link.target.id;
     return sourceId === actorNode.id || targetId === actorNode.id;
   });
 
-  // Filter by categories
   if (categories.length > 0) {
     relatedLinks = relatedLinks.filter((link) =>
       categories.includes(link.edge_type)
@@ -240,6 +242,7 @@ export async function fetchActorRelationships(
       actor_id: sourceId,
       target_id: targetId,
       definition: link.definition,
+      edge_type: link.edge_type,
     };
   });
 
@@ -298,18 +301,17 @@ export async function fetchDocument(docId: string): Promise<Document> {
   return {
     doc_id: docId,
     file_path: '',
-    one_sentence_summary: `US Code node ${docId}`,
-    paragraph_summary: 'Details for this node are derived from the US Code network data.',
-    category: 'US Code',
+    one_sentence_summary: node ? `IRS forms node: ${node.name}` : `Node ${docId}`,
+    paragraph_summary: `Details for ${node?.name || docId} (${node?.category || 'unknown'} taxpayer type)`,
+    category: node?.node_type || 'unknown',
     date_range_earliest: null,
     date_range_latest: null,
     full_name: node?.full_name,
     text: node?.text,
-    title: node?.title,
-    part: node?.part,
-    chapter: node?.chapter,
-    subchapter: node?.subchapter,
-    section: node?.section,
+    form_name: node?.node_type === 'form' ? node.name : undefined,
+    line_name: node?.node_type === 'line' ? node.name : undefined,
+    section_name: node?.node_type === 'section' ? node.name : undefined,
+    regulation_name: node?.node_type === 'regulation' ? node.name : undefined,
   };
 }
 
@@ -323,23 +325,45 @@ export async function fetchDocumentText(docId: string): Promise<{ text: string }
   console.log('=== fetchDocumentText DEBUG ===');
   console.log('docId:', docId);
   console.log('node found:', !!node);
-  console.log('node object:', node);
-  console.log('node.text:', node?.text);
-  console.log('node.section_text:', (node as any)?.section_text);
-  console.log('node.properties:', (node as any)?.properties);
-  console.log('node.properties.text:', (node as any)?.properties?.text);
+  console.log('node.name:', node?.name);
+  console.log('node.type:', node?.node_type);
+  console.log('node.category:', node?.category);
   
-  // Check properties object first, then top-level fields
-  const text = (node as any)?.properties?.text
-    || node?.text 
-    || (node as any)?.section_text 
-    || (node as any)?.properties?.full_name
-    || (node as any)?.definition
-    || (node as any)?.full_name
-    || 'No text available for this node.';
+  let text = '';
+  
+  if (node) {
+    text += `**${node.name}**\n\n`;
+    text += `Type: ${node.node_type}\n`;
+    text += `Category: ${node.category} taxpayer\n\n`;
+    
+    if (node.node_type === 'line' && (node.amount || node.num_forms)) {
+      if (node.amount) {
+        text += `Amount: $${node.amount.toLocaleString()}\n`;
+      }
+      if (node.num_forms) {
+        text += `Number of forms: ${node.num_forms.toLocaleString()}\n`;
+      }
+      text += '\n';
+    }
+    
+    if (node.text) {
+      text += `${node.text}\n\n`;
+    }
+    
+    if (node.full_name) {
+      text += `Full name: ${node.full_name}\n\n`;
+    }
+    
+    if (node.definition) {
+      text += `Definition: ${node.definition}\n\n`;
+    }
+  }
+  
+  if (!text) {
+    text = 'No text available for this node.';
+  }
 
-  console.log('Final text value:', text);
-  console.log('Text length:', text?.length);
+  console.log('Final text length:', text.length);
 
   return { text };
 }
@@ -349,11 +373,9 @@ export async function fetchNodeDetails(nodeId: string): Promise<any> {
     await loadGraph();
   }
 
-  // Try to find by id first, then by name
   let node = cachedGraph?.nodes.find((n) => n.id === nodeId);
   
   if (!node) {
-    // If not found by id, try searching by name
     node = cachedGraph?.nodes.find((n) => n.name === nodeId);
   }
   
@@ -363,10 +385,10 @@ export async function fetchNodeDetails(nodeId: string): Promise<any> {
     return null;
   }
   
-  // ✅ Merge properties into the main object for easier access
+  console.log('✅ Found node:', node.id, node.name, node.node_type, node.category);
+  
   return {
     ...node,
-    ...(node as any).properties,  // Spread properties to top level
+    ...(node as any).properties,
   };
 }
-

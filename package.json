@@ -1,9 +1,9 @@
 {
-  "name": "network-ui",
+  "name": "irs-forms-network",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://leahrosaliedion.github.io/US-Code_Network",
+  "homepage": "https://leahrosaliedion.github.io/IRS-Forms-Network",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

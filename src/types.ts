@@ -1,45 +1,37 @@
 // src/types.ts
 
-export type NodeType = 'section' | 'entity' | 'concept' | 'index';
+export type NodeType = 'form' | 'line' | 'section' | 'regulation';
 
 export interface GraphNode extends d3.SimulationNodeDatum {
-  id: string;          // e.g. "term:income", "index:title-26_section-61"
-  name: string;        // human-readable label
+  id: string;          // e.g. "form:individual:1040", "line:corporation:Form_1120_Line_1"
+  name: string;        // human-readable label (e.g., "Form 1040", "Section 162")
   val?: number;         // used for node size (degree) - computed at runtime
   totalVal?: number;   // degree before filtering - computed at runtime
   color?: string;      // computed at runtime based on type + degree
   baseColor?: string;  // computed at runtime
-  node_type: NodeType; // Required
+  node_type: NodeType; // Required: 'form' | 'line' | 'section' | 'regulation'
 
-  // NEW: Index/Section-specific metadata (from indexes_output.csv)
-  title?: string | null;     // parsed from name (e.g., "26")
-  part?: string | null;      // parsed from name
-  chapter?: string | null;   // parsed from name
-  subchapter?: string | null;// parsed from name
-  section?: string | null;   // parsed from name
-  display_label?: string | null; // ✅ ADDED: e.g., "[26 U.S.C. 61]"
+  // IRS Forms-specific metadata
+  category: 'individual' | 'corporation'; // ✅ NEW: taxpayer type
+  
+  // Line-specific properties
+  amount?: number;      // ✅ NEW: dollar amount for line items
+  num_forms?: number;   // ✅ NEW: number of forms with this line
 
-  // ✅ NEW: Properties object containing all data from CSV
+  // Properties object containing additional data
   properties?: {
-    full_name?: string;        // From indexes: full name of statute
-    text?: string;             // From indexes: section text content
-    definition?: string;       // ✅ ADDED: From terms that are defined
-    embedding?: number[];      // From both indexes and terms
-    full_name_embedding?: number[]; // From indexes
+    full_name?: string;
+    text?: string;
+    definition?: string;
+    embedding?: number[];
     [key: string]: any;        // Allow any other properties
   };
 
-  // LEGACY/COMPATIBILITY: Keep these at top level for backward compatibility
+  // Legacy display properties (can be populated from properties if needed)
+  display_label?: string | null;
   full_name?: string;
   text?: string;
-  section_num?: string | number;
-  section_heading?: string | null;
-  section_text?: string | null;
-  title_num?: number;
-  entity?: string | null;
-  tag?: string | null;
-  term_type?: string;        // 'Entity' or 'Concept' from old data
-  index_type?: string;       // 'Index' from old data
+  definition?: string;
 
   // D3 simulation properties (from d3.SimulationNodeDatum)
   x?: number;
@@ -53,11 +45,11 @@ export interface GraphNode extends d3.SimulationNodeDatum {
 export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
-  edge_type: 'definition' | 'reference' | 'hierarchy'; // ✅ More specific type
-  action: string;              // 'defines', 'references', 'includes'
+  edge_type: 'belongs_to' | 'cites_section' | 'cites_regulation'; // ✅ UPDATED for IRS forms
+  action?: string;              // Optional: 'belongs to', 'cites', etc.
   
   // Optional edge properties
-  definition?: string;         // For definition edges
+  definition?: string;
   location?: string;
   timestamp?: string;
   weight?: number;
@@ -86,6 +78,7 @@ export interface Relationship {
   target_id?: string;
   
   definition?: string;    // For definition relationships
+  edge_type?: string;     // ✅ ADDED: type of edge for filtering
 }
 
 export interface Actor {
@@ -109,14 +102,13 @@ export interface Document {
   date_range_earliest: string | null;
   date_range_latest: string | null;
   
-  // NEW: Add fields from new data structure
+  // IRS Forms fields
   full_name?: string;
   text?: string;
-  title?: string | null;
-  part?: string | null;
-  chapter?: string | null;
-  subchapter?: string | null;
-  section?: string | null;
+  form_name?: string;
+  line_name?: string;
+  section_name?: string;
+  regulation_name?: string;
 }
 
 export interface TagCluster {
@@ -129,17 +121,19 @@ export interface TagCluster {
 export interface NetworkBuilderState {
   // Keyword search
   searchTerms: string[];
-  searchFields: ('text' | 'full_name' | 'display_label' | 'definition' | 'entity' | 'concept' | 'properties')[]; // ✅ UPDATED: New search fields
+  searchFields: ('name' | 'full_name' | 'definition' | 'text')[]; // ✅ UPDATED: Simplified for IRS forms
   
   // Node type filters
-  allowedNodeTypes: ('section' | 'entity' | 'concept' | 'index')[]; // ✅ ADDED 'index'
+  allowedNodeTypes: ('form' | 'line' | 'section' | 'regulation')[]; // ✅ UPDATED for IRS forms
   
   // Edge type filters
-  allowedEdgeTypes: ('definition' | 'reference' | 'hierarchy')[];
+  allowedEdgeTypes: ('belongs_to' | 'cites_section' | 'cites_regulation')[]; // ✅ UPDATED for IRS forms
   
-  // Title/section filters (keep for potential future use)
-  allowedTitles: number[];
-  allowedSections: string[];
+  // Category filter (individual vs corporation)
+  allowedCategories: ('individual' | 'corporation')[]; // ✅ NEW: taxpayer type filter
+  
+  // Form-specific filters (for future use)
+  allowedForms: string[]; // e.g., ['Form 1040', 'Form 1120']
   
   // Expansion settings
   seedNodeIds: string[];

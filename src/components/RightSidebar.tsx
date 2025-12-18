@@ -1,3 +1,5 @@
+// src/components/RightSidebar.tsx
+
 import { useState, useEffect } from 'react';
 import { searchActors, fetchNodeDetails } from '../api';
 import type { Relationship, Actor, GraphNode } from '../types';
@@ -20,7 +22,6 @@ export default function RightSidebar({
   yearRange,
   keywords,
 }: RightSidebarProps) {
-  console.log('🔍 RightSidebar keywords:', keywords);
   const [expandedRelId, setExpandedRelId] = useState<number | null>(null);
   const [documentToView, setDocumentToView] = useState<string | null>(null);
   const [filterActor, setFilterActor] = useState<string | null>(null);
@@ -28,54 +29,28 @@ export default function RightSidebar({
   const [searchResults, setSearchResults] = useState<Actor[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [nodeDetails, setNodeDetails] = useState<Record<string, GraphNode | null>>({});
-  const [displayLabels, setDisplayLabels] = useState<Record<string, string>>({});
-  const [selectedActorDisplayLabel, setSelectedActorDisplayLabel] = useState<string | null>(null);
-  const [selectedActorDetails, setSelectedActorDetails] = useState<GraphNode | null>(null); // ✅ NEW
-
-  // Fetch display label for a node
-  const fetchDisplayLabel = async (nodeId: string) => {
-    if (displayLabels[nodeId]) return;
-    
-    try {
-      const details = await fetchNodeDetails(nodeId);
-      if (details?.node_type === 'index' && details.display_label) {
-        setDisplayLabels(prev => ({ ...prev, [nodeId]: details.display_label }));
-      }
-    } catch (err) {
-      console.error('Failed to fetch display label for:', nodeId, err);
-    }
-  };
+  const [selectedActorDetails, setSelectedActorDetails] = useState<GraphNode | null>(null);
 
   if (!selectedActor) return null;
 
-  // ✅ Fetch details for selected actor (for button display)
+  // Fetch details for selected actor
   useEffect(() => {
-    const fetchSelectedActorLabel = async () => {
+    const fetchSelectedActorDetails = async () => {
       if (!selectedActor) {
-        setSelectedActorDisplayLabel(null);
         setSelectedActorDetails(null);
         return;
       }
       
       try {
         const details = await fetchNodeDetails(selectedActor);
-
-        
         setSelectedActorDetails(details);
-        
-        if (details?.node_type === 'index' && details.display_label) {
-          setSelectedActorDisplayLabel(details.display_label);
-        } else {
-          setSelectedActorDisplayLabel(null);
-        }
       } catch (err) {
-        console.error('Failed to fetch display label for selected actor:', err);
-        setSelectedActorDisplayLabel(null);
+        console.error('Failed to fetch selected actor details:', err);
         setSelectedActorDetails(null);
       }
     };
     
-    fetchSelectedActorLabel();
+    fetchSelectedActorDetails();
   }, [selectedActor]);
 
   // Search for another node to filter by
@@ -102,28 +77,6 @@ export default function RightSidebar({
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
-  // Fetch display labels for all relationship nodes
-  useEffect(() => {
-    const fetchAllLabels = async () => {
-      const nodeIds = new Set<string>();
-      
-      relationships.forEach(rel => {
-        if (rel.actor_id) nodeIds.add(rel.actor_id);
-        if (rel.target_id) nodeIds.add(rel.target_id);
-      });
-      
-      for (const nodeId of nodeIds) {
-        if (!displayLabels[nodeId]) {
-          fetchDisplayLabel(nodeId);
-        }
-      }
-    };
-    
-    if (relationships.length > 0) {
-      fetchAllLabels();
-    }
-  }, [relationships]);
-
   // Filter relationships by a second node if chosen
   const filteredRelationships = filterActor
     ? relationships.filter(rel =>
@@ -131,12 +84,10 @@ export default function RightSidebar({
       )
     : relationships;
 
-  // Simple sort by timestamp if present
+  // Sort relationships by edge type
   const sortedRelationships = [...filteredRelationships].sort((a, b) => {
-    if (!a.timestamp && !b.timestamp) return 0;
-    if (!a.timestamp) return 1;
-    if (!b.timestamp) return -1;
-    return a.timestamp.localeCompare(b.timestamp);
+    const order = { 'belongs_to': 1, 'cites_section': 2, 'cites_regulation': 3 };
+    return (order[a.edge_type as keyof typeof order] || 99) - (order[b.edge_type as keyof typeof order] || 99);
   });
 
   // Toggle expansion and fetch neighbor node details
@@ -157,15 +108,25 @@ export default function RightSidebar({
       try {
         const details = await fetchNodeDetails(neighborId);
         setNodeDetails(prev => ({ ...prev, [neighborId]: details }));
-        
-        if (details?.node_type === 'index' && details.display_label) {
-          setDisplayLabels(prev => ({ ...prev, [neighborId]: details.display_label }));
-        }
       } catch (err) {
         console.error('Failed to fetch node details:', err);
         setNodeDetails(prev => ({ ...prev, [neighborId]: null }));
       }
     }
+  };
+
+  const getCategoryBadge = (category?: string) => {
+    return category === 'individual' ? '👤' : category === 'corporation' ? '🏢' : '';
+  };
+
+  const getNodeTypeLabel = (type?: string) => {
+    const labels: Record<string, string> = {
+      'form': 'Form',
+      'line': 'Line',
+      'section': 'USC Section',
+      'regulation': 'Regulation'
+    };
+    return labels[type || ''] || type || 'Unknown';
   };
 
   return (
@@ -177,32 +138,70 @@ export default function RightSidebar({
             <div className="flex-1">
               <div className="flex items-baseline gap-2">
                 <h2 className="text-lg font-semibold text-blue-400">Node relationships</h2>
-                <span className="text-xs text-gray-500">
-                  ({yearRange[0]} - {yearRange[1]})
-                </span>
               </div>
-              <p className="text-sm text-gray-400">{selectedActorDisplayLabel || selectedActor}</p>
+              
+              {/* Selected node info */}
+              <div className="mt-2">
+                <p className="text-sm text-white font-medium">
+                  {selectedActorDetails && getCategoryBadge(selectedActorDetails.category)}{' '}
+                  {selectedActorDetails?.name || selectedActor}
+                </p>
+                {selectedActorDetails && (
+                  <p className="text-xs text-gray-400">
+                    {getNodeTypeLabel(selectedActorDetails.node_type)}
+                    {' · '}
+                    {selectedActorDetails.category}
+                  </p>
+                )}
+              </div>
+              
               <p className="text-xs text-gray-500 mt-1">
                 Showing {sortedRelationships.length} of {totalRelationships} relationships
               </p>
               
-              {/* ✅ NEW: View buttons for selected node */}
-              <div className="mt-3 flex gap-2">
-                {selectedActorDetails && (selectedActorDetails.node_type === 'section' || selectedActorDetails.node_type === 'index') && (
+              {/* Node-specific details and actions */}
+              <div className="mt-3 space-y-2">
+                {/* Line node: show amount and num_forms */}
+                {selectedActorDetails?.node_type === 'line' && (
+                  <div className="p-2 bg-orange-900/20 border border-orange-700/30 rounded text-xs space-y-1">
+                    {selectedActorDetails.amount && (
+                      <div>
+                        <span className="text-gray-400">Amount:</span>{' '}
+                        <span className="text-orange-300 font-mono">
+                          ${selectedActorDetails.amount.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {selectedActorDetails.num_forms && (
+                      <div>
+                        <span className="text-gray-400">Forms:</span>{' '}
+                        <span className="text-orange-300 font-mono">
+                          {selectedActorDetails.num_forms.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* View text button for section/regulation */}
+                {selectedActorDetails && 
+                 (selectedActorDetails.node_type === 'section' || 
+                  selectedActorDetails.node_type === 'regulation') && (
                   <button
                     onClick={() => setDocumentToView(selectedActorDetails.id)}
-                    className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors"
+                    className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors w-full"
                   >
-                    View full section text
+                    View full text
                   </button>
                 )}
-                
-               {selectedActorDetails && selectedActorDetails.node_type === 'concept' && selectedActorDetails.properties?.definition && (
-  <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700/30 rounded">
-    <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
-    <div className="text-xs text-gray-300">{selectedActorDetails.properties.definition}</div>
-  </div>
-)}
+
+                {/* Show definition if available */}
+                {selectedActorDetails?.definition && (
+                  <div className="p-2 bg-blue-900/20 border border-blue-700/30 rounded">
+                    <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
+                    <div className="text-xs text-gray-300">{selectedActorDetails.definition}</div>
+                  </div>
+                )}
               </div>
             </div>
             <button
@@ -214,7 +213,7 @@ export default function RightSidebar({
           </div>
 
           {/* Filter by another node */}
-          <div className="relative">
+          <div className="relative mt-3">
             {filterActor ? (
               <div className="flex items-center justify-between bg-blue-900/30 border border-blue-700/50 rounded px-2 py-1">
                 <div>
@@ -234,13 +233,13 @@ export default function RightSidebar({
             ) : (
               <>
                 <label className="block text-xs text-gray-400 mb-1">
-                  Filter relationships by another node:
+                  Filter by another node:
                 </label>
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="e.g., § 1, Secretary, income tax"
+                  placeholder="Form 1040, Schedule C..."
                   className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm focus:outline-none focus:border-blue-500"
                 />
 
@@ -303,16 +302,23 @@ export default function RightSidebar({
                     }`}
                   >
                     <div className="text-sm flex items-center justify-between">
-                      <div>
-                        <span className={`font-medium ${rel.actor === selectedActor ? 'text-[#12B76A]' : 'text-[#F04438]'}`}>
-                          {displayLabels[rel.actor_id || rel.actor] || rel.actor}
-                        </span>
-                        <span className="text-gray-300 mx-1">{rel.action}</span>
-                        <span className={`font-medium ${rel.target === selectedActor ? 'text-[#12B76A]' : 'text-[#F04438]'}`}>
-                          {displayLabels[rel.target_id || rel.target] || rel.target}
-                        </span>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className={`font-medium ${rel.actor === selectedActor ? 'text-green-400' : 'text-orange-400'}`}>
+                            {rel.actor}
+                          </span>
+                          <span className="text-gray-400 text-xs">
+                            {rel.action}
+                          </span>
+                          <span className={`font-medium ${rel.target === selectedActor ? 'text-green-400' : 'text-orange-400'}`}>
+                            {rel.target}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {rel.edge_type?.replace(/_/g, ' ')}
+                        </div>
                       </div>
-                      <span className="text-gray-500 text-xs ml-2">
+                      <span className="text-gray-500 text-xs ml-2 flex-shrink-0">
                         {isExpanded ? '▼' : '▶'}
                       </span>
                     </div>
@@ -321,140 +327,114 @@ export default function RightSidebar({
                   {/* Expanded node metadata */}
                   {isExpanded && (
                     <div className="px-4 pb-4 bg-gray-700/10">
-
-                      {/* ✅ REMOVED: rel.definition display (was causing duplication) */}
-
                       {neighborDetails === undefined && (
                         <div className="text-xs text-gray-500">
                           Loading node details...
                         </div>
                       )}
 
-                      {/* ✅ Handle 'index' and 'section' node types */}
-                      {neighborDetails && (neighborDetails.node_type === 'section' || neighborDetails.node_type === 'index') && (
-                        <>
-                          <div className="text-xs text-gray-400 mb-1">
-                            {neighborDetails.node_type === 'index' ? 'Index' : 'Section'} details
+                      {/* Form node */}
+                      {neighborDetails && neighborDetails.node_type === 'form' && (
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-400 mb-1">Form details</div>
+                          <div className="font-semibold text-sm text-purple-300">
+                            {getCategoryBadge(neighborDetails.category)} {neighborDetails.name}
                           </div>
-                          
-                          {neighborDetails.node_type === 'index' && neighborDetails.display_label ? (
-                            <div className="font-semibold text-sm text-blue-300 mb-2">
-                              {neighborDetails.display_label}
-                            </div>
-                          ) : neighborDetails.display_label && (
-                            <div className="font-semibold text-sm text-blue-300 mb-2">
-                              {neighborDetails.display_label}
-                            </div>
-                          )}
-                          
-                          {(neighborDetails.properties?.full_name || neighborDetails.full_name) && (
-                            <div className="font-semibold text-sm text-gray-200 mb-1">
-                              {neighborDetails.properties?.full_name || neighborDetails.full_name}
-                            </div>
-                          )}
-                          
-                          <div className="text-sm text-gray-200 mb-1">
-                            {neighborDetails.section_num && (
-                              <span className="font-semibold">
-                                § {neighborDetails.section_num}{' '}
-                              </span>
-                            )}
-                            {neighborDetails.section_heading}
-                          </div>
-                          
                           <div className="text-xs text-gray-400">
-                            {(neighborDetails.title || neighborDetails.part || neighborDetails.chapter || neighborDetails.subchapter || neighborDetails.section) && (
-                              <div className="mb-1">
-                                <span className="font-semibold">Location:</span>{' '}
-                                {neighborDetails.title && `Title ${neighborDetails.title}`}
-                                {neighborDetails.part && `, Part ${neighborDetails.part}`}
-                                {neighborDetails.chapter && `, Chapter ${neighborDetails.chapter}`}
-                                {neighborDetails.subchapter && `, Subchapter ${neighborDetails.subchapter}`}
-                                {neighborDetails.section && `, Section ${neighborDetails.section}`}
-                              </div>
-                            )}
-                            
-                            {neighborDetails.title_num && (
-                              <div className="mb-1">
-                                <span className="font-semibold">Title:</span>{' '}
-                                {neighborDetails.title_num}
-                                {neighborDetails.title_heading && ` – ${neighborDetails.title_heading}`}
-                              </div>
-                            )}
-                            {neighborDetails.tags && (
-                              <div className="mt-1">
-                                <span className="font-semibold">Tags:</span>{' '}
-                                {neighborDetails.tags}
-                              </div>
-                            )}
-                            {neighborDetails.terms && (
-                              <div className="mt-1">
-                                <span className="font-semibold">Key terms:</span>{' '}
-                                {neighborDetails.terms}
-                              </div>
-                            )}
+                            Category: {neighborDetails.category}
                           </div>
-                          
+                          {neighborDetails.full_name && (
+                            <div className="text-xs text-gray-300">
+                              {neighborDetails.full_name}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Line node */}
+                      {neighborDetails && neighborDetails.node_type === 'line' && (
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-400 mb-1">Line details</div>
+                          <div className="font-semibold text-sm text-orange-300">
+                            {getCategoryBadge(neighborDetails.category)} {neighborDetails.name}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            Category: {neighborDetails.category}
+                          </div>
+                          {neighborDetails.amount && (
+                            <div className="text-xs">
+                              <span className="text-gray-400">Amount:</span>{' '}
+                              <span className="text-orange-300 font-mono">
+                                ${neighborDetails.amount.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                          {neighborDetails.num_forms && (
+                            <div className="text-xs">
+                              <span className="text-gray-400">Number of forms:</span>{' '}
+                              <span className="text-orange-300 font-mono">
+                                {neighborDetails.num_forms.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Section node */}
+                      {neighborDetails && neighborDetails.node_type === 'section' && (
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-400 mb-1">USC Section</div>
+                          <div className="font-semibold text-sm text-cyan-300">
+                            {neighborDetails.name}
+                          </div>
+                          {neighborDetails.full_name && (
+                            <div className="text-xs text-gray-300">
+                              {neighborDetails.full_name}
+                            </div>
+                          )}
+                          {neighborDetails.text && (
+                            <div className="text-xs text-gray-400 line-clamp-3">
+                              {neighborDetails.text}
+                            </div>
+                          )}
                           <button
                             onClick={() => setDocumentToView(neighborDetails.id)}
-                            className="mt-3 text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors"
+                            className="mt-2 text-xs px-3 py-1 bg-cyan-600 hover:bg-cyan-700 rounded text-white font-medium transition-colors"
                           >
                             View full section text
                           </button>
-                        </>
-                      )}
-
-                      {/* ✅ Handle entity nodes */}
-                      {neighborDetails && neighborDetails.node_type === 'entity' && (
-                        <div className="text-xs text-gray-400">
-                          <div className="mb-1">
-                            <span className="font-semibold">Entity:</span> {neighborDetails.name}
-                          </div>
-                          
-                          {neighborDetails.properties?.definition && (
-                            <div className="mb-2 p-2 bg-blue-900/20 border border-blue-700/30 rounded">
-                              <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
-                              <div className="text-xs text-gray-300">{neighborDetails.properties.definition}</div>
-                            </div>
-                          )}
-                          
-                          {neighborDetails.department && (
-                            <div className="mb-1">
-                              <span className="font-semibold">Department:</span>{' '}
-                              {neighborDetails.department}
-                            </div>
-                          )}
-                          {neighborDetails.total_mentions != null && (
-                            <div className="mb-1">
-                              <span className="font-semibold">Total mentions:</span>{' '}
-                              {neighborDetails.total_mentions}
-                            </div>
-                          )}
                         </div>
                       )}
 
-                      {/* ✅ Handle concept nodes */}
-                      {neighborDetails && neighborDetails.node_type === 'concept' && (
-                        <div className="text-xs text-gray-400">
-                          <div className="mb-1">
-                            <span className="font-semibold">Concept:</span> {neighborDetails.name}
+                      {/* Regulation node */}
+                      {neighborDetails && neighborDetails.node_type === 'regulation' && (
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-400 mb-1">Treasury Regulation</div>
+                          <div className="font-semibold text-sm text-pink-300">
+                            {neighborDetails.name}
                           </div>
-                          
-                          {neighborDetails.properties?.definition && (
-                            <div className="mb-2 p-2 bg-blue-900/20 border border-blue-700/30 rounded">
-                              <div className="text-xs text-blue-400 font-semibold mb-1">Definition:</div>
-                              <div className="text-xs text-gray-300">{neighborDetails.properties.definition}</div>
+                          {neighborDetails.full_name && (
+                            <div className="text-xs text-gray-300">
+                              {neighborDetails.full_name}
                             </div>
                           )}
+                          {neighborDetails.text && (
+                            <div className="text-xs text-gray-400 line-clamp-3">
+                              {neighborDetails.text}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => setDocumentToView(neighborDetails.id)}
+                            className="mt-2 text-xs px-3 py-1 bg-pink-600 hover:bg-pink-700 rounded text-white font-medium transition-colors"
+                          >
+                            View full regulation text
+                          </button>
                         </div>
                       )}
 
-                      {/* ✅ Fallback for other node types */}
+                      {/* Fallback for unknown types */}
                       {neighborDetails &&
-                        neighborDetails.node_type !== 'section' &&
-                        neighborDetails.node_type !== 'index' &&
-                        neighborDetails.node_type !== 'entity' &&
-                        neighborDetails.node_type !== 'concept' && (
+                        !['form', 'line', 'section', 'regulation'].includes(neighborDetails.node_type) && (
                           <div className="text-xs text-gray-400">
                             <div className="mb-1">
                               <span className="font-semibold">Node:</span> {neighborDetails.name}
