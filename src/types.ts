@@ -1,18 +1,18 @@
 // src/types.ts
 
-export type NodeType = 'form' | 'line' | 'section' | 'regulation';
+export type NodeType = 'form' | 'line' | 'index' | 'regulation'; // ✅ CHANGED: 'section' → 'index'
 
 export interface GraphNode extends d3.SimulationNodeDatum {
-  id: string;          // e.g. "form:individual:1040", "line:corporation:Form_1120_Line_1"
-  name: string;        // human-readable label (e.g., "Form 1040", "Section 162")
+  id: string;          // e.g. "form:individual:1040", "line:corporation:Form_1120_Line_1", "index:26_USC_162"
+  name: string;        // human-readable label (e.g., "Form 1040", "26 USC 162")
   val?: number;         // used for node size (degree) - computed at runtime
   totalVal?: number;   // degree before filtering - computed at runtime
   color?: string;      // computed at runtime based on type + degree
   baseColor?: string;  // computed at runtime
-  node_type: NodeType; // Required: 'form' | 'line' | 'section' | 'regulation'
+  node_type: NodeType; // Required: 'form' | 'line' | 'index' | 'regulation'
 
   // IRS Forms-specific metadata
-  category: 'individual' | 'corporation'; // ✅ NEW: taxpayer type
+  category?: 'individual' | 'corporation'; // ✅ UPDATED: Optional (index nodes don't have category)
   
   // Line-specific properties
   amount?: number;      // ✅ NEW: dollar amount for line items
@@ -45,7 +45,7 @@ export interface GraphNode extends d3.SimulationNodeDatum {
 export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
-  edge_type: 'belongs_to' | 'cites_section' | 'cites_regulation'; // ✅ UPDATED for IRS forms
+  edge_type: 'belongs_to' | 'cites_section' | 'cites_regulation'; // Note: 'cites_section' still refers to USC sections (index nodes)
   action?: string;              // Optional: 'belongs to', 'cites', etc.
   
   // Optional edge properties
@@ -76,6 +76,8 @@ export interface Relationship {
   target_type?: NodeType;
   actor_id?: string;
   target_id?: string;
+  actor_category?: 'individual' | 'corporation'; // ✅ NEW: for filtering
+  target_category?: 'individual' | 'corporation'; // ✅ NEW: for filtering
   
   definition?: string;    // For definition relationships
   edge_type?: string;     // ✅ ADDED: type of edge for filtering
@@ -124,10 +126,10 @@ export interface NetworkBuilderState {
   searchFields: ('name' | 'full_name' | 'definition' | 'text')[]; // ✅ UPDATED: Simplified for IRS forms
   
   // Node type filters
-  allowedNodeTypes: ('form' | 'line' | 'section' | 'regulation')[]; // ✅ UPDATED for IRS forms
+  allowedNodeTypes: ('form' | 'line' | 'index' | 'regulation')[]; // ✅ UPDATED: 'section' → 'index'
   
   // Edge type filters
-  allowedEdgeTypes: ('belongs_to' | 'cites_section' | 'cites_regulation')[]; // ✅ UPDATED for IRS forms
+  allowedEdgeTypes: ('belongs_to' | 'cites_section' | 'cites_regulation')[]; // Note: edge names unchanged (they still reference sections)
   
   // Category filter (individual vs corporation)
   allowedCategories: ('individual' | 'corporation')[]; // ✅ NEW: taxpayer type filter

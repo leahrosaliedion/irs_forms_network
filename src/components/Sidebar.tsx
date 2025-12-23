@@ -449,9 +449,9 @@ export default function Sidebar({
                     <input
                       type="range"
                       min="100"
-                      max="4000"
+                      max="3000"
                       step="100"
-                      value={maxHops === null ? 4000 : maxHops}
+                      value={maxHops === null ? 1000 : maxHops}
                       onChange={(e) => {
                         const value = parseInt(e.target.value);
                         onMaxHopsChange(value);
@@ -460,8 +460,8 @@ export default function Sidebar({
                     />
                     <div className="flex justify-between text-xs text-gray-500 mt-1">
         <span>100</span>
-        <span>2000</span>
-        <span>4000</span>
+        <span>1500</span>
+        <span>3000</span>
       </div>
 
                   </div>

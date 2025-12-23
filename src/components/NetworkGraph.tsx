@@ -8,6 +8,7 @@ import { fetchActorCounts, fetchNodeDetails } from '../api';
 interface NetworkGraphProps {
   relationships?: Relationship[];
   graphData?: { nodes: GraphNode[], links: GraphLink[] };
+  fullGraph?: { nodes: GraphNode[], links: GraphLink[] };
   selectedActor: string | null;
   onActorClick: (actorName: string | null) => void;
   minDensity: number;
@@ -18,21 +19,22 @@ interface NetworkGraphProps {
 function baseColorForType(t?: NodeType): string {
   switch (t) {
     case 'form':
-      return '#8B5CF6'; // purple
+      return '#88BACE'; // teal for forms
     case 'line':
-      return '#F97316'; // orange
-    case 'section':
-      return '#06B6D4'; // cyan
+      return '#9C3391'; // magenta for lines
+    case 'index':
+      return '#41378F'; // ink for index nodes
     case 'regulation':
-      return '#EC4899'; // pink
+      return '#A67EB3'; // lilac for regulations
     default:
-      return '#AFBBE8'; // steel fallback
+      return '#AFBBE8'; // fallback steel color
   }
 }
 
 export default function NetworkGraph({
   relationships,
   graphData: externalGraphData, 
+  fullGraph,
   selectedActor,
   onActorClick,
   minDensity,
@@ -51,194 +53,224 @@ export default function NetworkGraph({
   const [nodeDetailsCache, setNodeDetailsCache] = useState<Record<string, GraphNode>>({});
 
   const graphData = useMemo(() => {
-  // Bottom-up mode: use pre-built graph data
-  if (externalGraphData) {
-    console.log('=== Using external graph data (bottom-up mode) ===');
-    console.log('Nodes:', externalGraphData.nodes.length);
-    console.log('Links:', externalGraphData.links.length);
-    
-    // ✅ DON'T apply categoryFilter in bottom-up mode
-    // The bottom-up search already applied its own category filter
-    const filteredNodes = externalGraphData.nodes;
-    
-    // Create a set of valid node IDs for quick lookup
-    const validNodeIds = new Set(filteredNodes.map(n => n.id));
-    
-    // Filter links to only include those where both endpoints exist
-    const validLinks = externalGraphData.links.filter(link => {
-      const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
-      const targetId = typeof link.target === 'string' ? link.target : link.target.id;
-      return validNodeIds.has(sourceId) && validNodeIds.has(targetId);
-    });
-    
-    console.log('Valid links after filtering:', validLinks.length);
-    
-    return {
-      nodes: filteredNodes,
-      links: validLinks
+    // Bottom-up mode: use pre-built graph data
+    if (externalGraphData) {
+      console.log('=== Using external graph data (bottom-up mode) ===');
+      console.log('Nodes:', externalGraphData.nodes.length);
+      console.log('Links:', externalGraphData.links.length);
+      
+      const filteredNodes = externalGraphData.nodes;
+      const validNodeIds = new Set(filteredNodes.map(n => n.id));
+      
+      const validLinks = externalGraphData.links.filter(link => {
+        const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
+        const targetId = typeof link.target === 'string' ? link.target : link.target.id;
+        return validNodeIds.has(sourceId) && validNodeIds.has(targetId);
+      });
+      
+      console.log('Valid links after filtering:', validLinks.length);
+      
+      return {
+        nodes: filteredNodes,
+        links: validLinks
+      };
+    }
+
+    // Top-down mode: build from relationships
+    if (!relationships || relationships.length === 0) {
+      return { nodes: [] as GraphNode[], links: [] as GraphLink[] };
+    }
+
+    console.log('🔍 Top-down mode - categoryFilter:', categoryFilter ? Array.from(categoryFilter) : 'none');
+
+    const extractCategory = (id: string): 'individual' | 'corporation' | null => {
+      const parts = id.split(':');
+      if (parts.length >= 2) {
+        const cat = parts[1];
+        if (cat === 'individual' || cat === 'corporation') {
+          return cat;
+        }
+      }
+      return null;
     };
-  }
 
+    const extractNodeType = (id: string): NodeType | null => {
+      const parts = id.split(':');
+      if (parts.length > 0) {
+        const type = parts[0];
+        if (['form', 'line', 'index', 'regulation'].includes(type)) {
+          return type as NodeType;
+        }
+      }
+      return null;
+    };
 
-  // Top-down mode: build from relationships
-if (!relationships || relationships.length === 0) {
-  return { nodes: [] as GraphNode[], links: [] as GraphLink[] };
-}
+    const selectedCategory = categoryFilter && categoryFilter.size === 1 
+      ? Array.from(categoryFilter)[0] 
+      : null;
 
-console.log('🔍 Top-down mode - categoryFilter:', categoryFilter ? Array.from(categoryFilter) : 'none');
+    console.log('🎯 Selected category:', selectedCategory);
 
-// Extract category from node ID (format: "type:category:name")
-const extractCategory = (id: string): 'individual' | 'corporation' | null => {
-  const parts = id.split(':');
-  if (parts.length >= 2) {
-    const cat = parts[1];
-    if (cat === 'individual' || cat === 'corporation') {
-      return cat;
-    }
-  }
-  return null;
-};
+    const nodeMap = new Map<string, GraphNode>();
+    const links: GraphLink[] = [];
+    const edgeMap = new Map<string, GraphLink & { count: number }>();
 
-// Get the selected category (should only be one)
-const selectedCategory = categoryFilter && categoryFilter.size === 1 
-  ? Array.from(categoryFilter)[0] 
-  : null;
+    relationships.forEach((rel) => {
+      const sourceId = rel.actor_id ?? rel.actor;
+      const targetId = rel.target_id ?? rel.target;
+      const sourceType = rel.actor_type || extractNodeType(sourceId);
+      const targetType = rel.target_type || extractNodeType(targetId);
 
-console.log('🎯 Selected category:', selectedCategory);
+      const sourceCategory = extractCategory(sourceId);
+      const targetCategory = extractCategory(targetId);
 
-const nodeMap = new Map<string, GraphNode>();
-const links: GraphLink[] = [];
-const edgeMap = new Map<string, GraphLink & { count: number }>();
+      const sourceIsIndex = sourceType === 'index';
+      const targetIsIndex = targetType === 'index';
 
-relationships.forEach((rel) => {
-  const sourceId = rel.actor_id ?? rel.actor;
-  const targetId = rel.target_id ?? rel.target;
-  const sourceType = rel.actor_type;
-  const targetType = rel.target_type;
+      if (selectedCategory) {
+        if (!sourceIsIndex && sourceCategory !== selectedCategory) {
+          return;
+        }
+        if (!targetIsIndex && targetCategory !== selectedCategory) {
+          return;
+        }
+      }
 
-  const sourceCategory = extractCategory(sourceId);
-  const targetCategory = extractCategory(targetId);
+      if (!nodeMap.has(sourceId)) {
+        const baseColor = baseColorForType(sourceType);
 
-  // ✅ STRICT FILTER: If a category is selected, ONLY include nodes of that category
-  if (selectedCategory) {
-    // Skip if source doesn't match
-    if (sourceCategory !== selectedCategory) {
-      return;
-    }
-    // Skip if target doesn't match
-    if (targetCategory !== selectedCategory) {
-      return;
-    }
-  }
+        const originalNode = fullGraph?.nodes.find(n => n.id === sourceId);
 
-  if (!nodeMap.has(sourceId)) {
-    const baseColor = baseColorForType(sourceType);
-    nodeMap.set(sourceId, {
-      id: sourceId,
-      name: rel.actor,
-      val: 1,
-      node_type: sourceType,
-      category: sourceCategory || 'individual',
-      color: baseColor,
-      baseColor,
+        nodeMap.set(sourceId, {
+          id: sourceId,
+          name: rel.actor,
+          val: 1,
+          node_type: sourceType,
+          category: sourceCategory || undefined,
+          amount: originalNode?.amount,
+          num_forms: originalNode?.num_forms,
+          color: baseColor,
+          baseColor,
+        });
+      } else {
+        const node = nodeMap.get(sourceId)!;
+        node.val += 1;
+      }
+
+      if (!nodeMap.has(targetId)) {
+        const baseColor = baseColorForType(targetType);
+        
+        const originalNode = fullGraph?.nodes.find(n => n.id === targetId);
+
+        nodeMap.set(targetId, {
+          id: targetId,
+          name: rel.target,
+          val: 1,
+          node_type: targetType,
+          category: targetCategory || undefined,
+          amount: originalNode?.amount,
+          num_forms: originalNode?.num_forms,
+          color: baseColor,
+          baseColor,
+        });
+      } else {
+        const node = nodeMap.get(targetId)!;
+        node.val += 1;
+      }
+
+      const keyA = `${sourceId}|||${targetId}`;
+      const keyB = `${targetId}|||${sourceId}`;
+      const edgeKey = edgeMap.has(keyA) ? keyA : (edgeMap.has(keyB) ? keyB : keyA);
+
+      if (!edgeMap.has(edgeKey)) {
+        edgeMap.set(edgeKey, {
+          source: sourceId,
+          target: targetId,
+          action: rel.action,
+          edge_type: rel.edge_type || 'reference',
+          location: rel.location || undefined,
+          timestamp: rel.timestamp || undefined,
+          count: 1,
+        });
+      } else {
+        edgeMap.get(edgeKey)!.count += 1;
+      }
     });
-  } else {
-    const node = nodeMap.get(sourceId)!;
-    node.val += 1;
-  }
 
-  if (!nodeMap.has(targetId)) {
-    const baseColor = baseColorForType(targetType);
-    nodeMap.set(targetId, {
-      id: targetId,
-      name: rel.target,
-      val: 1,
-      node_type: targetType,
-      category: targetCategory || 'individual',
-      color: baseColor,
-      baseColor,
+    const nodesByType = {
+      forms: 0,
+      lines: 0,
+      indexes: 0,
+      regulations: 0
+    };
+    nodeMap.forEach(node => {
+      if (node.node_type === 'form') nodesByType.forms++;
+      if (node.node_type === 'line') nodesByType.lines++;
+      if (node.node_type === 'index') nodesByType.indexes++;
+      if (node.node_type === 'regulation') nodesByType.regulations++;
     });
-  } else {
-    const node = nodeMap.get(targetId)!;
-    node.val += 1;
-  }
 
-  const keyA = `${sourceId}|||${targetId}`;
-  const keyB = `${targetId}|||${sourceId}`;
-  const edgeKey = edgeMap.has(keyA) ? keyA : (edgeMap.has(keyB) ? keyB : keyA);
+    console.log(`✅ After category filter (keeping index nodes) - nodes: ${nodeMap.size} links: ${edgeMap.size}`);
+    console.log(`   Forms: ${nodesByType.forms}, Lines: ${nodesByType.lines}, Indexes: ${nodesByType.indexes}, Regulations: ${nodesByType.regulations}`);
 
-  if (!edgeMap.has(edgeKey)) {
-    edgeMap.set(edgeKey, {
-      source: sourceId,
-      target: targetId,
-      action: rel.action,
-      edge_type: rel.edge_type || 'reference',
-      location: rel.location || undefined,
-      timestamp: rel.timestamp || undefined,
-      count: 1,
-    });
-  } else {
-    edgeMap.get(edgeKey)!.count += 1;
-  }
-});
+    links.push(...Array.from(edgeMap.values()));
 
-console.log('✅ After strict category filter - nodes:', nodeMap.size, 'links:', edgeMap.size);
-
-links.push(...Array.from(edgeMap.values()));
-
-
-
-  const allNodes = Array.from(nodeMap.values());
-  if (allNodes.length === 0) {
-    return { nodes: [] as GraphNode[], links: [] as GraphLink[] };
-  }
-
-  const maxVal = Math.max(...allNodes.map(n => n.val), 1);
-  const strength = (v: number) => v / maxVal;
-
-  // Color scales for IRS forms node types
-  const formColorScale = d3.scaleSequential((t: number) =>
-    d3.interpolateRgb('#C4B5FD', '#8B5CF6')(t) // light purple to dark purple
-  );
-  const lineColorScale = d3.scaleSequential((t: number) =>
-    d3.interpolateRgb('#FDBA74', '#F97316')(t) // light orange to dark orange
-  );
-  const sectionColorScale = d3.scaleSequential((t: number) =>
-    d3.interpolateRgb('#67E8F9', '#06B6D4')(t) // light cyan to dark cyan
-  );
-  const regulationColorScale = d3.scaleSequential((t: number) =>
-    d3.interpolateRgb('#F9A8D4', '#EC4899')(t) // light pink to dark pink
-  );
-
-  const nodes = allNodes.map(node => {
-    const t = strength(node.val);
-
-    let color = node.baseColor || baseColorForType(node.node_type);
-    if (node.node_type === 'form') {
-      color = formColorScale(t);
-    } else if (node.node_type === 'line') {
-      color = lineColorScale(t);
-    } else if (node.node_type === 'section') {
-      color = sectionColorScale(t);
-    } else if (node.node_type === 'regulation') {
-      color = regulationColorScale(t);
+    const allNodes = Array.from(nodeMap.values());
+    if (allNodes.length === 0) {
+      return { nodes: [] as GraphNode[], links: [] as GraphLink[] };
     }
+
+    const maxVal = Math.max(...allNodes.map(n => n.val), 1);
+    const strength = (v: number) => Math.pow(v / maxVal, 0.6);
+
+    const formColorScale = d3.scaleSequential((t: number) =>
+      d3.interpolateRgb('#D9EEF5', '#88BACE')(t)
+    );
+    const lineColorScale = d3.scaleSequential((t: number) =>
+      d3.interpolateRgb('#D99BC9', '#9C3391')(t)
+    );
+    const indexColorScale = d3.scaleSequential((t: number) =>
+      d3.interpolateRgb('#9B8BCC', '#41378F')(t)
+    );
+    const regulationColorScale = d3.scaleSequential((t: number) =>
+      d3.interpolateRgb('#D9C6E3', '#A67EB3')(t)
+    );
+
+    const nodes = allNodes.map(node => {
+      const t = strength(node.val);
+
+      let color = node.baseColor || baseColorForType(node.node_type);
+      if (node.node_type === 'form') {
+        color = formColorScale(t);
+      } else if (node.node_type === 'line') {
+        color = lineColorScale(t);
+      } else if (node.node_type === 'index') {
+        color = indexColorScale(t);
+      } else if (node.node_type === 'regulation') {
+        color = regulationColorScale(t);
+      }
+
+      const d3Color = d3.color(color);
+      if (d3Color) {
+        const hslColor = d3.hsl(d3Color);
+        hslColor.s = Math.min(1, hslColor.s * 1.2);
+        color = hslColor.toString();
+      }
+
+      return {
+        ...node,
+        val: node.val,
+        totalVal: node.val,
+        color,
+        baseColor: color,
+      };
+    });
 
     return {
-      ...node,
-      val: node.val,
-      totalVal: node.val,
-      color,
-      baseColor: color,
+      nodes,
+      links,
     };
-  });
-
-  return {
-    nodes,
-    links,
-  };
-}, [relationships, externalGraphData, categoryFilter]);  // Add categoryFilter to dependencies
-
+  }, [relationships, externalGraphData, categoryFilter]);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -388,63 +420,56 @@ links.push(...Array.from(edgeMap.values()));
       .style('z-index', '1000')
       .style('max-width', '300px');
 
-    node.on('mouseover', async (event, d) => {
-      // Build tooltip content
-      const categoryBadge = d.category === 'individual' ? '👤' : d.category === 'corporation' ? '🏢' : '';
-      const nodeTypeLabel = {
-        'form': 'Form',
-        'line': 'Line',
-        'section': 'USC Section',
-        'regulation': 'Regulation'
-      }[d.node_type] || d.node_type;
+   node.on('mouseover', (event, d) => {
+  // ✅ DEBUG: Log what data is in the node
+  if (d.node_type === 'line') {
+    console.log('Line node hover:', {
+      id: d.id,
+      name: d.name,
+      amount: d.amount,
+      num_forms: d.num_forms,
+      fullNode: d
+    });
+  }
 
-      let tooltipHtml = `<strong>${categoryBadge} ${d.name}</strong><br/>`;
-      tooltipHtml += `<span style="color: #9ca3af;">${nodeTypeLabel} · ${d.category}</span><br/>`;
-      tooltipHtml += `${d.val} connections in view`;
+  const categoryBadge = d.category === 'individual' ? '👤' : d.category === 'corporation' ? '🏢' : d.node_type === 'index' ? '📖' : '';
+  const nodeTypeLabel = {
+    'form': 'Form',
+    'line': 'Line',
+    'index': 'USC Section',
+    'regulation': 'Regulation'
+  }[d.node_type] || d.node_type;
 
-      // Fetch additional details if not cached
-      if (!nodeDetailsCache[d.id]) {
-        tooltip.style('visibility', 'visible').html(tooltipHtml + '<br/><span style="color: #9ca3af;">Loading details...</span>');
-        
-        try {
-          const details = await fetchNodeDetails(d.id);
-          if (details) {
-            setNodeDetailsCache(prev => ({ ...prev, [d.id]: details }));
-            
-            // Update tooltip with details
-            if (details.node_type === 'line') {
-              if (details.amount) {
-                tooltipHtml += `<br/><span style="color: #fb923c;">Amount: $${details.amount.toLocaleString()}</span>`;
-              }
-              if (details.num_forms) {
-                tooltipHtml += `<br/><span style="color: #fb923c;">Forms: ${details.num_forms.toLocaleString()}</span>`;
-              }
-            }
-            
-            tooltip.html(tooltipHtml);
-          }
-        } catch (err) {
-          console.error('Failed to fetch node details:', err);
-        }
-      } else {
-        const cachedDetails = nodeDetailsCache[d.id];
-        if (cachedDetails.node_type === 'line') {
-          if (cachedDetails.amount) {
-            tooltipHtml += `<br/><span style="color: #fb923c;">Amount: $${cachedDetails.amount.toLocaleString()}</span>`;
-          }
-          if (cachedDetails.num_forms) {
-            tooltipHtml += `<br/><span style="color: #fb923c;">Forms: ${cachedDetails.num_forms.toLocaleString()}</span>`;
-          }
-        }
-        tooltip.style('visibility', 'visible').html(tooltipHtml);
-      }
+  let tooltipHtml = `<strong>${categoryBadge} ${d.name}</strong><br/>`;
+  tooltipHtml += `<span style="color: #9ca3af;">${nodeTypeLabel}`;
+  if (d.category) {
+    tooltipHtml += ` · ${d.category}`;
+  }
+  tooltipHtml += `</span><br/>`;
+  tooltipHtml += `${d.val} connections in view`;
 
-      // Also show total count if available
-      let totalCount = actorTotalCounts[d.name] || onDemandCounts[d.name];
-      if (totalCount !== undefined && totalCount !== d.val) {
-        tooltip.html(tooltipHtml + `<br/><span style="color: #9ca3af;">(${totalCount} total)</span>`);
-      }
-    })
+  // ✅ ALWAYS show amount and num_forms for line nodes
+  if (d.node_type === 'line') {
+    const amountDisplay = d.amount !== null && d.amount !== undefined
+      ? `$${d.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : 'N/A';
+    
+    const numFormsDisplay = d.num_forms !== null && d.num_forms !== undefined
+      ? d.num_forms.toLocaleString()
+      : 'N/A';
+    
+    tooltipHtml += `<br/><span style="color: #C679B4;">Amount: ${amountDisplay}</span>`;
+    tooltipHtml += `<br/><span style="color: #C679B4;">Forms: ${numFormsDisplay}</span>`;
+  }
+
+  tooltip.style('visibility', 'visible').html(tooltipHtml);
+
+  let totalCount = actorTotalCounts[d.name] || onDemandCounts[d.name];
+  if (totalCount !== undefined && totalCount !== d.val) {
+    tooltip.html(tooltipHtml + `<br/><span style="color: #9ca3af;">(${totalCount} total)</span>`);
+  }
+})
+
     .on('mousemove', (event) => {
       tooltip
         .style('top', (event.pageY - 10) + 'px')
@@ -502,7 +527,6 @@ links.push(...Array.from(edgeMap.values()));
   useEffect(() => {
     if (!nodeGroupRef.current || !linkGroupRef.current) return;
 
-    // Highlight selected node
     nodeGroupRef.current.selectAll('circle')
       .attr('fill', (d: any) => {
         return selectedActor && d.name === selectedActor ? '#22d3ee' : d.baseColor;

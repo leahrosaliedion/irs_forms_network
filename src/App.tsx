@@ -59,7 +59,7 @@ function App() {
   const [selectedActor, setSelectedActor] = useState<string | null>(null);
   const [actorRelationships, setActorRelationships] = useState<Relationship[]>([]);
   const [actorTotalBeforeFilter, setActorTotalBeforeFilter] = useState<number>(0);
-  const [limit, setLimit] = useState(isMobile ? 5000 : 9600);
+  const [limit, setLimit] = useState(5000);
   const [maxHops, setMaxHops] = useState<number | null>(1000);
   const [minDensity, setMinDensity] = useState(50);
   const [enabledClusterIds, setEnabledClusterIds] = useState<Set<number>>(new Set());
@@ -69,7 +69,8 @@ function App() {
   const [keywords, setKeywords] = useState('');
   const [actorTotalCounts, setActorTotalCounts] = useState<Record<string, number>>({});
   const [categoryFilter, setCategoryFilter] = useState<Set<'individual' | 'corporation'>>(
-  new Set(['individual']));
+    new Set(['individual'])
+  );
   const [showWelcome, setShowWelcome] = useState(() => {
     return !localStorage.getItem('hasSeenWelcome');
   });
@@ -103,14 +104,14 @@ function App() {
   useEffect(() => {
     const loadGraphData = async () => {
       try {
-        console.log('Loading IRS forms graph data for network builder...');
+        console.log('Loading merged IRS + Title 26 graph data...');
         
         const apiModule = await import('./api');
         
         if (typeof apiModule.loadGraph === 'function') {
           const data = await apiModule.loadGraph();
           
-          console.log('✅ IRS forms graph data loaded successfully:', {
+          console.log('✅ Merged graph data loaded successfully:', {
             nodes: data.nodes.length,
             links: data.links.length,
             sampleNode: data.nodes[0]
@@ -129,11 +130,11 @@ function App() {
           throw new Error('loadGraph function not found in api module');
         }
       } catch (err) {
-        console.error('❌ Failed to load IRS forms graph data:', err);
+        console.error('❌ Failed to load graph data:', err);
         
         if (err instanceof Error) {
           if (err.message.includes('404') || err.message.includes('Failed to load graph data')) {
-            console.error('📝 Make sure irs_forms_network.json exists in the /public folder');
+            console.error('📝 Make sure merged_title26_irs_khop.json exists in the /public folder');
           }
         }
         
@@ -147,28 +148,28 @@ function App() {
   // Compute stats from loaded graph data
   useEffect(() => {
     if (fullGraph.nodes.length > 0) {
-      // Count by IRS forms node types
+      // Count by node types (index nodes are category-agnostic)
       const formNodes = fullGraph.nodes.filter(n => n.node_type === 'form').length;
       const lineNodes = fullGraph.nodes.filter(n => n.node_type === 'line').length;
-      const sectionNodes = fullGraph.nodes.filter(n => n.node_type === 'section').length;
+      const indexNodes = fullGraph.nodes.filter(n => n.node_type === 'index').length;
       const regulationNodes = fullGraph.nodes.filter(n => n.node_type === 'regulation').length;
       
-      // Count by IRS forms edge types
+      // Count by edge types
       const belongsToLinks = fullGraph.links.filter(l => l.edge_type === 'belongs_to').length;
       const citesSectionLinks = fullGraph.links.filter(l => l.edge_type === 'cites_section').length;
       const citesRegulationLinks = fullGraph.links.filter(l => l.edge_type === 'cites_regulation').length;
       
-      console.log('📊 IRS Forms Network Stats:', {
+      console.log('📊 Merged IRS + Title 26 Network Stats:', {
         forms: formNodes,
         lines: lineNodes,
-        sections: sectionNodes,
+        indexes: indexNodes,
         regulations: regulationNodes,
         totalNodes: fullGraph.nodes.length,
         totalLinks: fullGraph.links.length
       });
       
       setStats({
-        totalDocuments: { count: fullGraph.nodes.length },  // All nodes
+        totalDocuments: { count: fullGraph.nodes.length },
         totalTriples: { count: fullGraph.links.length },
         totalActors: { count: fullGraph.nodes.length },
         categories: [
@@ -191,80 +192,79 @@ function App() {
   }, [isInitialized, buildMode, limit, enabledClusterIds, enabledCategories, yearRange, includeUndated, keywords, maxHops, categoryFilter]);
 
   const loadData = async () => {
-  console.log('=== loadData called ===');
-  console.log('limit:', limit);
-  console.log('maxHops:', maxHops);
-  console.log('enabledCategories:', Array.from(enabledCategories));
-  console.log('categoryFilter:', Array.from(categoryFilter)); // Added
+    console.log('=== loadData called ===');
+    console.log('limit:', limit);
+    console.log('maxHops:', maxHops);
+    console.log('enabledCategories:', Array.from(enabledCategories));
+    console.log('categoryFilter:', Array.from(categoryFilter));
 
-  try {
-    setLoading(true);
-    const clusterIds = Array.from(enabledClusterIds);
-    const categories = Array.from(enabledCategories);
-    const [relationshipsResponse, actorCounts] = await Promise.all([
-      fetchRelationships(limit, clusterIds, categories, yearRange, includeUndated, keywords, maxHops),
-      fetchActorCounts(300)
-    ]);
-    
-    // Apply category filter - NEW
-    let filteredByCategory = relationshipsResponse.relationships;
-    if (categoryFilter.size > 0 && categoryFilter.size < 2) {
-      // Only filter if not both selected
-      const allowedCategories = Array.from(categoryFilter);
-      filteredByCategory = filteredByCategory.filter(rel => {
-        // Check if either actor or target matches allowed categories
-        // This assumes nodes have a category property - you may need to fetch this
-        return true; // For now, we'll filter in the graph rendering
-      });
-    }
-    
-    // Apply node count limit if maxHops is set (we're reusing maxHops as maxNodes)
-    let filteredRelationships = filteredByCategory;
-    
-    if (maxHops !== null && maxHops < filteredRelationships.length) {
-      // Build a set of unique nodes from relationships
-      const nodeSet = new Set<string>();
-      const nodeDegree = new Map<string, number>();
+    try {
+      setLoading(true);
+      const clusterIds = Array.from(enabledClusterIds);
+      const categories = Array.from(enabledCategories);
+      const [relationshipsResponse, actorCounts] = await Promise.all([
+        fetchRelationships(limit, clusterIds, categories, yearRange, includeUndated, keywords, maxHops),
+        fetchActorCounts(300)
+      ]);
       
-      filteredRelationships.forEach(rel => {
-        const actorId = rel.actor_id ?? rel.actor;
-        const targetId = rel.target_id ?? rel.target;
-        
-        nodeSet.add(actorId);
-        nodeSet.add(targetId);
-        
-        nodeDegree.set(actorId, (nodeDegree.get(actorId) || 0) + 1);
-        nodeDegree.set(targetId, (nodeDegree.get(targetId) || 0) + 1);
-      });
-      
-      // If we have more nodes than maxHops, keep only the top N by degree
-      if (nodeSet.size > maxHops) {
-        const sortedNodes = Array.from(nodeDegree.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, maxHops)
-          .map(([nodeId]) => nodeId);
-        
-        const allowedNodes = new Set(sortedNodes);
-        
-        // Filter relationships to only include those between allowed nodes
-        filteredRelationships = filteredRelationships.filter(rel => {
-          const actorId = rel.actor_id ?? rel.actor;
-          const targetId = rel.target_id ?? rel.target;
-          return allowedNodes.has(actorId) && allowedNodes.has(targetId);
+      // Apply category filter - NEW
+      let filteredByCategory = relationshipsResponse.relationships;
+      if (categoryFilter.size > 0 && categoryFilter.size < 2) {
+        // Only filter if not both selected
+        const allowedCategories = Array.from(categoryFilter);
+        filteredByCategory = filteredByCategory.filter(rel => {
+          // Check if either actor or target matches allowed categories
+          // This assumes nodes have a category property - you may need to fetch this
+          return true; // For now, we'll filter in the graph rendering
         });
       }
+      
+      // Apply node count limit if maxHops is set (we're reusing maxHops as maxNodes)
+      let filteredRelationships = filteredByCategory;
+      
+      if (maxHops !== null && maxHops < filteredRelationships.length) {
+        // Build a set of unique nodes from relationships
+        const nodeSet = new Set<string>();
+        const nodeDegree = new Map<string, number>();
+        
+        filteredRelationships.forEach(rel => {
+          const actorId = rel.actor_id ?? rel.actor;
+          const targetId = rel.target_id ?? rel.target;
+          
+          nodeSet.add(actorId);
+          nodeSet.add(targetId);
+          
+          nodeDegree.set(actorId, (nodeDegree.get(actorId) || 0) + 1);
+          nodeDegree.set(targetId, (nodeDegree.get(targetId) || 0) + 1);
+        });
+        
+        // If we have more nodes than maxHops, keep only the top N by degree
+        if (nodeSet.size > maxHops) {
+          const sortedNodes = Array.from(nodeDegree.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, maxHops)
+            .map(([nodeId]) => nodeId);
+          
+          const allowedNodes = new Set(sortedNodes);
+          
+          // Filter relationships to only include those between allowed nodes
+          filteredRelationships = filteredRelationships.filter(rel => {
+            const actorId = rel.actor_id ?? rel.actor;
+            const targetId = rel.target_id ?? rel.target;
+            return allowedNodes.has(actorId) && allowedNodes.has(targetId);
+          });
+        }
+      }
+      
+      setRelationships(filteredRelationships);
+      setTotalBeforeLimit(relationshipsResponse.totalBeforeLimit);
+      setActorTotalCounts(actorCounts);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
     }
-    
-    setRelationships(filteredRelationships);
-    setTotalBeforeLimit(relationshipsResponse.totalBeforeLimit);
-    setActorTotalCounts(actorCounts);
-  } catch (error) {
-    console.error('Error loading data:', error);
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   const handleActorClick = useCallback((actorName: string | null) => {
     setSelectedActor(prev => {
@@ -299,8 +299,8 @@ function App() {
   }, []);
 
   const toggleCategoryFilter = useCallback((category: 'individual' | 'corporation') => {
-  setCategoryFilter(new Set([category])); // Always set to exactly one category
-}, []);
+    setCategoryFilter(new Set([category])); // Always set to exactly one category
+  }, []);
 
   const handleCloseWelcome = useCallback(() => {
     localStorage.setItem('hasSeenWelcome', 'true');
@@ -394,7 +394,7 @@ function App() {
     try {
       const terms = params.keywords.split(',').map(t => t.trim()).filter(t => t);
       
-      console.log('=== Building IRS Forms Bottom-Up Network ===');
+      console.log('=== Building Merged Network (Bottom-Up) ===');
       console.log('Search keywords:', terms);
       console.log('Search fields:', params.searchFields);
       console.log('Search logic:', params.searchLogic);
@@ -407,7 +407,7 @@ function App() {
       const builderState: NetworkBuilderState = {
         searchTerms: terms,
         searchFields: params.searchFields,
-        allowedNodeTypes: params.nodeTypes as ('form' | 'line' | 'section' | 'regulation')[],
+        allowedNodeTypes: params.nodeTypes as ('form' | 'line' | 'index' | 'regulation')[], // changed 'section' to 'index'
         allowedEdgeTypes: params.edgeTypes as ('belongs_to' | 'cites_section' | 'cites_regulation')[],
         allowedCategories: params.categoryFilter as ('individual' | 'corporation')[],
         allowedForms: [],
@@ -450,7 +450,7 @@ function App() {
       setBuildMode('bottom-up');
 
     } catch (error) {
-      console.error('Error building IRS forms network:', error);
+      console.error('Error building network:', error);
       alert('An error occurred while building the network. Check the console for details.');
     } finally {
       setLoading(false);
@@ -533,13 +533,14 @@ function App() {
           <div className="flex items-center justify-center h-full bg-gray-900">
             <div className="text-center">
               <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
-              <p className="text-gray-300">Loading IRS forms network...</p>
+              <p className="text-gray-300">Loading network...</p>
             </div>
           </div>
         ) : (
           <NetworkGraph
             graphData={buildMode === 'bottom-up' ? displayGraph : undefined}
             relationships={buildMode === 'top-down' ? relationships : undefined}
+            fullGraph={fullGraph}
             selectedActor={selectedActor}
             onActorClick={handleActorClick}
             minDensity={minDensity}

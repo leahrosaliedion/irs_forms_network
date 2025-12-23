@@ -33,13 +33,13 @@ export async function fetchTagClusters(): Promise<TagCluster[]> {
 }
 
 export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLink[] }> {
-  const res = await fetch(`${import.meta.env.BASE_URL}irs_forms_network.json`);
+  const res = await fetch(`${import.meta.env.BASE_URL}merged_title26_irs_khop.json`);
   if (!res.ok) {
     throw new Error('Failed to load graph data');
   }
   const raw = (await res.json()) as { nodes: any[]; links: any[] };
 
-  console.log('📊 Loading IRS forms graph...');
+  console.log('📊 Loading merged IRS + Title 26 graph...');
   console.log(`Raw data: ${raw.nodes.length} nodes, ${raw.links.length} links`);
 
   // Compute degree for each node
@@ -57,16 +57,16 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
   const nodes: GraphNode[] = raw.nodes.map((n) => {
     const degree = degreeMap.get(n.id) || 0;
 
-    // Color assignment based on IRS forms node types
+    // Color assignment with new palette
     let baseColor: string;
-    if (n.type === 'form') {
-      baseColor = '#8B5CF6'; // purple for forms
-    } else if (n.type === 'line') {
-      baseColor = '#F97316'; // orange for lines
-    } else if (n.type === 'section') {
-      baseColor = '#06B6D4'; // cyan for sections
-    } else if (n.type === 'regulation') {
-      baseColor = '#EC4899'; // pink for regulations
+    if (n.node_type === 'form') {
+      baseColor = '#677CC2'; // blue for forms
+    } else if (n.node_type === 'line') {
+      baseColor = '#A67EB3'; // lilac for lines
+    } else if (n.node_type === 'index') {
+      baseColor = '#41378F'; // ink for index nodes (Title 26 + IRS)
+    } else if (n.node_type === 'regulation') {
+      baseColor = '#88BACE'; // teal for regulations
     } else {
       baseColor = '#AFBBE8'; // fallback steel color
     }
@@ -74,8 +74,8 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
     return {
       id: n.id,
       name: n.name,
-      node_type: n.type,
-      category: n.category,
+      node_type: n.node_type,
+      category: n.category, // undefined for index nodes (shared)
       val: degree,
       totalVal: degree,
       amount: n.amount,
@@ -87,7 +87,7 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
         ...n.properties,
       },
       full_name: n.full_name,
-      text: n.text,
+      text: n.text ?? n.properties?.text, // Title 26 text is in properties.text
       definition: n.definition,
       color: baseColor,
       baseColor,
@@ -301,8 +301,8 @@ export async function fetchDocument(docId: string): Promise<Document> {
   return {
     doc_id: docId,
     file_path: '',
-    one_sentence_summary: node ? `IRS forms node: ${node.name}` : `Node ${docId}`,
-    paragraph_summary: `Details for ${node?.name || docId} (${node?.category || 'unknown'} taxpayer type)`,
+    one_sentence_summary: node ? `${node.node_type} node: ${node.name}` : `Node ${docId}`,
+    paragraph_summary: `Details for ${node?.name || docId}${node?.category ? ` (${node.category} taxpayer type)` : ''}`,
     category: node?.node_type || 'unknown',
     date_range_earliest: null,
     date_range_latest: null,
@@ -310,7 +310,7 @@ export async function fetchDocument(docId: string): Promise<Document> {
     text: node?.text,
     form_name: node?.node_type === 'form' ? node.name : undefined,
     line_name: node?.node_type === 'line' ? node.name : undefined,
-    section_name: node?.node_type === 'section' ? node.name : undefined,
+    section_name: node?.node_type === 'index' ? node.name : undefined, // changed from 'section'
     regulation_name: node?.node_type === 'regulation' ? node.name : undefined,
   };
 }
@@ -334,7 +334,12 @@ export async function fetchDocumentText(docId: string): Promise<{ text: string }
   if (node) {
     text += `**${node.name}**\n\n`;
     text += `Type: ${node.node_type}\n`;
-    text += `Category: ${node.category} taxpayer\n\n`;
+    
+    if (node.category) {
+      text += `Category: ${node.category} taxpayer\n\n`;
+    } else {
+      text += '\n';
+    }
     
     if (node.node_type === 'line' && (node.amount || node.num_forms)) {
       if (node.amount) {

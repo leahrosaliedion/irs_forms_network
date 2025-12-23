@@ -413,69 +413,72 @@ export class NetworkBuilder {
     const maxVal = Math.max(...nodes.map(n => n.val || 1), 1);
 
     // Create strength function (0 to 1 based on connections)
-    const strength = (v: number) => v / maxVal;
+    const strength = (v: number) => Math.pow(v / maxVal, 0.6); // Lower exponent = more dramatic gradient
 
-    // Color scales for IRS forms node types
-    const formColorScale = (t: number) => {
-      // Purple gradient for forms
-      const r1 = 0x9B, g1 = 0x96, b1 = 0xC9;
-      const r2 = 0x41, g2 = 0x37, b2 = 0x8F;
-      const r = Math.round(r1 + (r2 - r1) * t);
-      const g = Math.round(g1 + (g2 - g1) * t);
-      const b = Math.round(b1 + (b2 - b1) * t);
-      return `rgb(${r}, ${g}, ${b})`;
-    };
+// Color scales for IRS forms node types - EXPANDED gradients
+const formColorScale = (t: number) => {
+  // Teal gradient for forms
+  const r1 = 0xD9, g1 = 0xEE, b1 = 0xF5; // Very light teal
+  const r2 = 0x88, g2 = 0xBA, b2 = 0xCE; // Teal
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return `rgb(${r}, ${g}, ${b})`;
+};
 
-    const lineColorScale = (t: number) => {
-      // Orange gradient for lines
-      const r1 = 0xF9, g1 = 0xD9, b1 = 0x9B;
-      const r2 = 0xF0, g2 = 0xA7, b2 = 0x34;
-      const r = Math.round(r1 + (r2 - r1) * t);
-      const g = Math.round(g1 + (g2 - g1) * t);
-      const b = Math.round(b1 + (b2 - b1) * t);
-      return `rgb(${r}, ${g}, ${b})`;
-    };
+const lineColorScale = (t: number) => {
+  // Magenta gradient for lines
+  const r1 = 0xD9, g1 = 0x9B, b1 = 0xC9; // Very light magenta
+  const r2 = 0x9C, g2 = 0x33, b2 = 0x91; // Magenta
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return `rgb(${r}, ${g}, ${b})`;
+};
 
-    const sectionColorScale = (t: number) => {
-      // Cyan gradient for sections
-      const r1 = 0x9B, g1 = 0xE4, b1 = 0xF5;
-      const r2 = 0x06, g2 = 0xB6, b2 = 0xD4;
-      const r = Math.round(r1 + (r2 - r1) * t);
-      const g = Math.round(g1 + (g2 - g1) * t);
-      const b = Math.round(b1 + (b2 - b1) * t);
-      return `rgb(${r}, ${g}, ${b})`;
-    };
+const indexColorScale = (t: number) => {
+  // Ink gradient for index nodes
+  const r1 = 0x9B, g1 = 0x8B, b1 = 0xCC; // Very light purple
+  const r2 = 0x41, g2 = 0x37, b2 = 0x8F; // Ink
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return `rgb(${r}, ${g}, ${b})`;
+};
 
-    const regulationColorScale = (t: number) => {
-      // Pink gradient for regulations
-      const r1 = 0xE8, g1 = 0xB3, b1 = 0xE3;
-      const r2 = 0x9C, g2 = 0x33, b2 = 0x91;
-      const r = Math.round(r1 + (r2 - r1) * t);
-      const g = Math.round(g1 + (g2 - g1) * t);
-      const b = Math.round(b1 + (b2 - b1) * t);
-      return `rgb(${r}, ${g}, ${b})`;
-    };
+const regulationColorScale = (t: number) => {
+  // Lilac gradient for regulations
+  const r1 = 0xD9, g1 = 0xC6, b1 = 0xE3; // Very light lilac
+  const r2 = 0xA6, g2 = 0x7E, b2 = 0xB3; // Lilac
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return `rgb(${r}, ${g}, ${b})`;
+};
 
-    // Apply colors to each node based on type and degree strength
-    nodes.forEach(node => {
-      const t = strength(node.val || 1);
-      let color: string;
 
-      if (node.node_type === 'form') {
-        color = formColorScale(t);
-      } else if (node.node_type === 'line') {
-        color = lineColorScale(t);
-      } else if (node.node_type === 'section') {
-        color = sectionColorScale(t);
-      } else if (node.node_type === 'regulation') {
-        color = regulationColorScale(t);
-      } else {
-        color = '#AFBBE8'; // fallback steel color
-      }
+// Apply colors to each node based on type and degree strength
+nodes.forEach(node => {
+  const t = strength(node.val || 1);
+  let color: string;
 
-      node.color = color;
-      node.baseColor = color;
-    });
+  if (node.node_type === 'form') {
+    color = formColorScale(t);
+  } else if (node.node_type === 'line') {
+    color = lineColorScale(t);
+  } else if (node.node_type === 'index') {
+    color = indexColorScale(t);
+  } else if (node.node_type === 'regulation') {
+    color = regulationColorScale(t);
+  } else {
+    color = '#AFBBE8'; // fallback steel color
+  }
+
+  node.color = color;
+  node.baseColor = color;
+});
+
+
 
     console.log(`⏱️ Step 8 (color computation): ${(performance.now() - colorStart).toFixed(2)}ms`);
     console.log('🎨 Color computation complete. Sample colored nodes:');
