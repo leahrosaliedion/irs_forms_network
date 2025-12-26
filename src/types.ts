@@ -17,6 +17,10 @@ export interface GraphNode extends d3.SimulationNodeDatum {
   // Line-specific properties
   amount?: number;      // ✅ NEW: dollar amount for line items
   num_forms?: number;   // ✅ NEW: number of forms with this line
+  amount_per_form?: number | null;
+  total_amount?: number | null;
+  total_num_forms?: number | null;
+  num_lines?: number;
 
   // Properties object containing additional data
   properties?: {

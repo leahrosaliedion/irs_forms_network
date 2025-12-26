@@ -33,7 +33,7 @@ export async function fetchTagClusters(): Promise<TagCluster[]> {
 }
 
 export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLink[] }> {
-  const res = await fetch(`${import.meta.env.BASE_URL}merged_title26_irs_khop.json`);
+  const res = await fetch(`${import.meta.env.BASE_URL}irs_forms_network.json`);
   if (!res.ok) {
     throw new Error('Failed to load graph data');
   }
@@ -78,8 +78,15 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
       category: n.category, // undefined for index nodes (shared)
       val: degree,
       totalVal: degree,
+
       amount: n.amount,
       num_forms: n.num_forms,
+      amount_per_form: n.amount_per_form,
+
+      total_amount: n.total_amount,
+      total_num_forms: n.total_num_forms,
+      num_lines: n.num_lines,
+
       properties: {
         full_name: n.full_name,
         text: n.text,
@@ -391,6 +398,14 @@ export async function fetchNodeDetails(nodeId: string): Promise<any> {
   }
   
   console.log('✅ Found node:', node.id, node.name, node.node_type, node.category);
+  
+  // ✅ Debug: Log the aggregated fields
+  console.log('📊 Aggregated data:', {
+    total_amount: node.total_amount,
+    total_num_forms: node.total_num_forms,
+    amount_per_form: node.amount_per_form,
+    num_lines: node.num_lines
+  });
   
   return {
     ...node,

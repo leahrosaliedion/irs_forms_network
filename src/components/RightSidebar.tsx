@@ -123,10 +123,61 @@ export default function RightSidebar({
     const labels: Record<string, string> = {
       'form': 'Form',
       'line': 'Line',
+      'index': 'USC Section',
       'section': 'USC Section',
       'regulation': 'Regulation'
     };
     return labels[type || ''] || type || 'Unknown';
+  };
+
+  // ✅ Helper function to format amount/num_forms
+  const formatAmount = (amount: number | null | undefined): string => {
+    return amount !== null && amount !== undefined
+      ? `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : 'N/A';
+  };
+
+  const formatNumForms = (numForms: number | null | undefined): string => {
+    return numForms !== null && numForms !== undefined
+      ? numForms.toLocaleString()
+      : 'N/A';
+  };
+
+  // ✅ Helper function to get color for node type
+  const getNodeTypeColor = (type?: string): string => {
+    const colors: Record<string, string> = {
+      'form': '#88BACE',      // teal
+      'line': '#C679B4',      // magenta
+      'index': '#41378F',     // ink
+      'section': '#41378F',   // ink (same as index)
+      'regulation': '#A67EB3' // lilac
+    };
+    return colors[type || ''] || '#AFBBE8'; // fallback steel
+  };
+
+  // ✅ Helper to format amount_per_form
+  const formatAmountPerForm = (amount: number | null | undefined): string => {
+    return amount !== null && amount !== undefined
+      ? `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : 'N/A';
+  };
+
+  // ✅ Helper to get node type from relationship
+  const getNodeTypeFromRel = (nodeName: string, nodeId?: string): string | undefined => {
+    // First try to get from cached details
+    if (nodeId && nodeDetails[nodeId]) {
+      return nodeDetails[nodeId]?.node_type;
+    }
+    
+    // Otherwise, extract from ID pattern: "type:category:name"
+    if (nodeId) {
+      const parts = nodeId.split(':');
+      if (parts.length > 0) {
+        return parts[0]; // form, line, index, regulation
+      }
+    }
+    
+    return undefined;
   };
 
   return (
@@ -149,8 +200,7 @@ export default function RightSidebar({
                 {selectedActorDetails && (
                   <p className="text-xs text-gray-400">
                     {getNodeTypeLabel(selectedActorDetails.node_type)}
-                    {' · '}
-                    {selectedActorDetails.category}
+                    {selectedActorDetails.category && ` · ${selectedActorDetails.category}`}
                   </p>
                 )}
               </div>
@@ -161,31 +211,94 @@ export default function RightSidebar({
               
               {/* Node-specific details and actions */}
               <div className="mt-3 space-y-2">
-                {/* Line node: show amount and num_forms */}
+                {/* ✅ Line node: show individual metrics */}
                 {selectedActorDetails?.node_type === 'line' && (
-                  <div className="p-2 bg-orange-900/20 border border-orange-700/30 rounded text-xs space-y-1">
-                    {selectedActorDetails.amount && (
-                      <div>
-                        <span className="text-gray-400">Amount:</span>{' '}
-                        <span className="text-orange-300 font-mono">
-                          ${selectedActorDetails.amount.toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                    {selectedActorDetails.num_forms && (
-                      <div>
-                        <span className="text-gray-400">Forms:</span>{' '}
-                        <span className="text-orange-300 font-mono">
-                          {selectedActorDetails.num_forms.toLocaleString()}
-                        </span>
-                      </div>
-                    )}
+                  <div className="p-2 bg-pink-900/20 border border-pink-700/30 rounded text-xs space-y-1">
+                    <div>
+                      <span className="text-gray-400">Amount:</span>{' '}
+                      <span className="font-mono" style={{ color: '#C679B4' }}>
+                        {formatAmount(selectedActorDetails.amount)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Forms:</span>{' '}
+                      <span className="font-mono" style={{ color: '#C679B4' }}>
+                        {formatNumForms(selectedActorDetails.num_forms)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Amount per form:</span>{' '}
+                      <span className="font-mono" style={{ color: '#C679B4' }}>
+                        {formatAmountPerForm(selectedActorDetails.amount_per_form)}
+                      </span>
+                    </div>
                   </div>
                 )}
 
-                {/* View text button for section/regulation */}
+                {/* ✅ Form node: show aggregated metrics */}
+                {selectedActorDetails?.node_type === 'form' && (
+                  <div className="p-2 bg-teal-900/20 border border-teal-700/30 rounded text-xs space-y-1">
+                    <div>
+                      <span className="text-gray-400">Total amount:</span>{' '}
+                      <span className="font-mono" style={{ color: '#88BACE' }}>
+                        {formatAmount(selectedActorDetails.total_amount)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Total forms:</span>{' '}
+                      <span className="font-mono" style={{ color: '#88BACE' }}>
+                        {formatNumForms(selectedActorDetails.total_num_forms)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Avg per form:</span>{' '}
+                      <span className="font-mono" style={{ color: '#88BACE' }}>
+                        {formatAmountPerForm(selectedActorDetails.amount_per_form)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Lines:</span>{' '}
+                      <span className="font-mono" style={{ color: '#88BACE' }}>
+                        {selectedActorDetails.num_lines?.toLocaleString() || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* ✅ Index/Section node: show aggregated metrics */}
+                {selectedActorDetails?.node_type === 'index' && (
+                  <div className="p-2 bg-indigo-900/20 border border-indigo-700/30 rounded text-xs space-y-1">
+                    <div>
+                      <span className="text-gray-400">Total amount:</span>{' '}
+                      <span className="font-mono" style={{ color: '#41378F' }}>
+                        {formatAmount(selectedActorDetails.total_amount)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Total forms:</span>{' '}
+                      <span className="font-mono" style={{ color: '#41378F' }}>
+                        {formatNumForms(selectedActorDetails.total_num_forms)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Avg per form:</span>{' '}
+                      <span className="font-mono" style={{ color: '#41378F' }}>
+                        {formatAmountPerForm(selectedActorDetails.amount_per_form)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Citing lines:</span>{' '}
+                      <span className="font-mono" style={{ color: '#41378F' }}>
+                        {selectedActorDetails.num_lines?.toLocaleString() || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* View text button for section/regulation/index */}
                 {selectedActorDetails && 
                  (selectedActorDetails.node_type === 'section' || 
+                  selectedActorDetails.node_type === 'index' ||
                   selectedActorDetails.node_type === 'regulation') && (
                   <button
                     onClick={() => setDocumentToView(selectedActorDetails.id)}
@@ -304,13 +417,24 @@ export default function RightSidebar({
                     <div className="text-sm flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-1 flex-wrap">
-                          <span className={`font-medium ${rel.actor === selectedActor ? 'text-green-400' : 'text-orange-400'}`}>
+                          {/* Actor with color */}
+                          <span 
+                            className="font-medium"
+                            style={{ color: getNodeTypeColor(getNodeTypeFromRel(rel.actor, rel.actor_id)) }}
+                          >
                             {rel.actor}
                           </span>
+                          
+                          {/* Action */}
                           <span className="text-gray-400 text-xs">
                             {rel.action}
                           </span>
-                          <span className={`font-medium ${rel.target === selectedActor ? 'text-green-400' : 'text-orange-400'}`}>
+                          
+                          {/* Target with color */}
+                          <span 
+                            className="font-medium"
+                            style={{ color: getNodeTypeColor(getNodeTypeFromRel(rel.target, rel.target_id)) }}
+                          >
                             {rel.target}
                           </span>
                         </div>
@@ -337,7 +461,7 @@ export default function RightSidebar({
                       {neighborDetails && neighborDetails.node_type === 'form' && (
                         <div className="space-y-2">
                           <div className="text-xs text-gray-400 mb-1">Form details</div>
-                          <div className="font-semibold text-sm text-purple-300">
+                          <div className="font-semibold text-sm text-white">
                             {getCategoryBadge(neighborDetails.category)} {neighborDetails.name}
                           </div>
                           <div className="text-xs text-gray-400">
@@ -348,43 +472,74 @@ export default function RightSidebar({
                               {neighborDetails.full_name}
                             </div>
                           )}
+                          {/* ✅ Show aggregated metrics */}
+                          <div className="mt-2 space-y-1">
+                            <div className="text-xs">
+                              <span className="text-gray-400">Total amount:</span>{' '}
+                              <span className="font-mono" style={{ color: '#88BACE' }}>
+                                {formatAmount(neighborDetails.total_amount)}
+                              </span>
+                            </div>
+                            <div className="text-xs">
+                              <span className="text-gray-400">Total forms:</span>{' '}
+                              <span className="font-mono" style={{ color: '#88BACE' }}>
+                                {formatNumForms(neighborDetails.total_num_forms)}
+                              </span>
+                            </div>
+                            <div className="text-xs">
+                              <span className="text-gray-400">Avg per form:</span>{' '}
+                              <span className="font-mono" style={{ color: '#88BACE' }}>
+                                {formatAmountPerForm(neighborDetails.amount_per_form)}
+                              </span>
+                            </div>
+                            <div className="text-xs">
+                              <span className="text-gray-400">Lines:</span>{' '}
+                              <span className="font-mono" style={{ color: '#88BACE' }}>
+                                {neighborDetails.num_lines?.toLocaleString() || 'N/A'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       )}
 
-                      {/* Line node */}
+                      {/* ✅ Line node: show individual metrics */}
                       {neighborDetails && neighborDetails.node_type === 'line' && (
                         <div className="space-y-2">
                           <div className="text-xs text-gray-400 mb-1">Line details</div>
-                          <div className="font-semibold text-sm text-orange-300">
+                          <div className="font-semibold text-sm text-white">
                             {getCategoryBadge(neighborDetails.category)} {neighborDetails.name}
                           </div>
                           <div className="text-xs text-gray-400">
                             Category: {neighborDetails.category}
                           </div>
-                          {neighborDetails.amount && (
+                          <div className="mt-2 space-y-1">
                             <div className="text-xs">
                               <span className="text-gray-400">Amount:</span>{' '}
-                              <span className="text-orange-300 font-mono">
-                                ${neighborDetails.amount.toLocaleString()}
+                              <span className="font-mono" style={{ color: '#C679B4' }}>
+                                {formatAmount(neighborDetails.amount)}
                               </span>
                             </div>
-                          )}
-                          {neighborDetails.num_forms && (
                             <div className="text-xs">
-                              <span className="text-gray-400">Number of forms:</span>{' '}
-                              <span className="text-orange-300 font-mono">
-                                {neighborDetails.num_forms.toLocaleString()}
+                              <span className="text-gray-400">Forms:</span>{' '}
+                              <span className="font-mono" style={{ color: '#C679B4' }}>
+                                {formatNumForms(neighborDetails.num_forms)}
                               </span>
                             </div>
-                          )}
+                            <div className="text-xs">
+                              <span className="text-gray-400">Amount per form:</span>{' '}
+                              <span className="font-mono" style={{ color: '#C679B4' }}>
+                                {formatAmountPerForm(neighborDetails.amount_per_form)}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       )}
 
-                      {/* Section node */}
-                      {neighborDetails && neighborDetails.node_type === 'section' && (
+                      {/* Section/Index node */}
+                      {neighborDetails && (neighborDetails.node_type === 'section' || neighborDetails.node_type === 'index') && (
                         <div className="space-y-2">
                           <div className="text-xs text-gray-400 mb-1">USC Section</div>
-                          <div className="font-semibold text-sm text-cyan-300">
+                          <div className="font-semibold text-sm text-white">
                             {neighborDetails.name}
                           </div>
                           {neighborDetails.full_name && (
@@ -397,6 +552,33 @@ export default function RightSidebar({
                               {neighborDetails.text}
                             </div>
                           )}
+                          {/* ✅ Show aggregated metrics */}
+                          <div className="mt-2 space-y-1">
+                            <div className="text-xs">
+                              <span className="text-gray-400">Total amount:</span>{' '}
+                              <span className="font-mono" style={{ color: '#41378F' }}>
+                                {formatAmount(neighborDetails.total_amount)}
+                              </span>
+                            </div>
+                            <div className="text-xs">
+                              <span className="text-gray-400">Total forms:</span>{' '}
+                              <span className="font-mono" style={{ color: '#41378F' }}>
+                                {formatNumForms(neighborDetails.total_num_forms)}
+                              </span>
+                            </div>
+                            <div className="text-xs">
+                              <span className="text-gray-400">Avg per form:</span>{' '}
+                              <span className="font-mono" style={{ color: '#41378F' }}>
+                                {formatAmountPerForm(neighborDetails.amount_per_form)}
+                              </span>
+                            </div>
+                            <div className="text-xs">
+                              <span className="text-gray-400">Citing lines:</span>{' '}
+                              <span className="font-mono" style={{ color: '#41378F' }}>
+                                {neighborDetails.num_lines?.toLocaleString() || 'N/A'}
+                              </span>
+                            </div>
+                          </div>
                           <button
                             onClick={() => setDocumentToView(neighborDetails.id)}
                             className="mt-2 text-xs px-3 py-1 bg-cyan-600 hover:bg-cyan-700 rounded text-white font-medium transition-colors"
@@ -410,7 +592,7 @@ export default function RightSidebar({
                       {neighborDetails && neighborDetails.node_type === 'regulation' && (
                         <div className="space-y-2">
                           <div className="text-xs text-gray-400 mb-1">Treasury Regulation</div>
-                          <div className="font-semibold text-sm text-pink-300">
+                          <div className="font-semibold text-sm text-white">
                             {neighborDetails.name}
                           </div>
                           {neighborDetails.full_name && (
@@ -434,7 +616,7 @@ export default function RightSidebar({
 
                       {/* Fallback for unknown types */}
                       {neighborDetails &&
-                        !['form', 'line', 'section', 'regulation'].includes(neighborDetails.node_type) && (
+                        !['form', 'line', 'section', 'index', 'regulation'].includes(neighborDetails.node_type) && (
                           <div className="text-xs text-gray-400">
                             <div className="mb-1">
                               <span className="font-semibold">Node:</span> {neighborDetails.name}
@@ -476,3 +658,4 @@ export default function RightSidebar({
     </>
   );
 }
+
