@@ -25,7 +25,7 @@ export interface GraphNode extends d3.SimulationNodeDatum {
   total_num_forms?: number | null;
   num_lines?: number;
 
-  // ✅ NEW: Category-specific properties for index nodes (shared across categories)
+  // Category-specific properties for index nodes (shared across categories)
   ind_total_amount?: number | null;      // Individual category total amount
   ind_total_num_forms?: number | null;   // Individual category number of forms
   ind_amount_per_form?: number | null;   // Individual category amount per form
@@ -35,6 +35,21 @@ export interface GraphNode extends d3.SimulationNodeDatum {
   corp_total_num_forms?: number | null;  // Corporation category number of forms
   corp_amount_per_form?: number | null;  // Corporation category amount per form
   corp_num_lines?: number;               // Corporation category number of lines
+  hierarchy?: {
+    title?: string;
+    part?: string;
+    part2?: string;
+    chapter?: string;
+    subchapter?: string;
+    subpart?: string;
+    section?: string;
+    subsection?: string;
+    paragraph?: string;
+    subparagraph?: string;
+    clause?: string;
+    subclause?: string;
+  };
+  index_heading?: string;
 
   // Properties object containing additional data
   properties?: {
@@ -129,6 +144,22 @@ export interface Document {
   line_name?: string;
   section_name?: string;
   regulation_name?: string;
+
+  hierarchy?: {
+    title?: string;
+    part?: string;
+    part2?: string;
+    chapter?: string;
+    subchapter?: string;
+    subpart?: string;
+    section?: string;
+    subsection?: string;
+    paragraph?: string;
+    subparagraph?: string;
+    clause?: string;
+    subclause?: string;
+  };
+  index_heading?: string;
 }
 
 export interface TagCluster {

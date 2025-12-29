@@ -46,6 +46,10 @@ interface SidebarProps {
     truncated: boolean;
     matchedCount: number;
   };
+  topDownGraphInfo?: {    // ✅ NEW: Top-down graph stats
+    nodeCount: number;
+    linkCount: number;
+  } | null;
 }
 
 // Helper component to fetch and display selected node
@@ -140,7 +144,8 @@ export default function Sidebar({
   onStartNewNetwork,
   onResetToTopDown,
   onBottomUpSearch,
-  displayGraphInfo
+  displayGraphInfo,
+  topDownGraphInfo
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Actor[]>([]);
@@ -392,23 +397,37 @@ export default function Sidebar({
 
       {/* Stats */}
       {stats && buildMode === 'top-down' && (
-        <div className="p-4 border-b border-gray-700 flex-shrink-0">
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-400">Total nodes:</span>
-              <span className="font-mono text-blue-400">
-                {stats.totalDocuments.count.toLocaleString()}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Relationships:</span>
-              <span className="font-mono text-cyan-400">
-                {stats.totalTriples.count.toLocaleString()}
-              </span>
-            </div>
+  <div className="p-4 border-b border-gray-700 flex-shrink-0">
+    <div className="space-y-2 text-sm">
+      {/* ✅ UPDATED: Show current graph stats with aligned layout */}
+      {topDownGraphInfo && topDownGraphInfo.nodeCount > 0 && (
+        <div className="mb-3 p-2 bg-gray-900/50 rounded text-xs space-y-1 border border-gray-700">
+          <div className="flex justify-between">
+            <span className="text-gray-100">Displaying nodes:</span>
+            <span className="font-mono text-green-400">{topDownGraphInfo.nodeCount.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-100">Displaying relationships:</span>
+            <span className="font-mono text-green-400">{topDownGraphInfo.linkCount.toLocaleString()}</span>
           </div>
         </div>
       )}
+      
+      <div className="flex justify-between">
+        <span className="text-gray-400">Total nodes:</span>
+        <span className="font-mono text-blue-400">
+          {stats.totalDocuments.count.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-gray-400">Total relationships:</span>
+        <span className="font-mono text-cyan-400">
+          {stats.totalTriples.count.toLocaleString()}
+        </span>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Selected node */}
       {selectedActor && (
@@ -716,11 +735,11 @@ export default function Sidebar({
                   {/* ✅ UPDATED: Added hierarchy and reference edge types */}
                   <div className="space-y-2">
                     {[
-                      { value: 'belongs_to', label: 'Belongs to (line → form)' },
-                      { value: 'cites_section', label: 'Cites USC section' },
-                      { value: 'cites_regulation', label: 'Cites regulation' },
-                      { value: 'hierarchy', label: 'Title 26 hierarchy' },
-                      { value: 'reference', label: 'Code references' }
+                      { value: 'belongs_to', label: 'Form → Line' },
+                      { value: 'cites_section', label: 'Line → Section' },
+                      { value: 'cites_regulation', label: 'Line → Regulation' },
+                      { value: 'hierarchy', label: 'Title 26 Hierarchy' },
+                      { value: 'reference', label: 'Title 26 References' }
                     ].map(type => (
                       <label key={type.value} className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -949,11 +968,11 @@ export default function Sidebar({
                   {stats.categories.map((cat) => {
                     const isEnabled = enabledCategories.has(cat.category);
                     const labels: Record<string, string> = {
-                      'belongs_to': 'Belongs to',
-                      'cites_section': 'Cites section',
-                      'cites_regulation': 'Cites regulation',
-                      'hierarchy': 'Title 26 hierarchy',
-                      'reference': 'Code references'
+                      'belongs_to': 'Form → Line',
+                      'cites_section': 'Line → Section',
+                      'cites_regulation': 'Line → Regulation',
+                      'hierarchy': 'Title 26 Hierarchy',
+                      'reference': 'Title 26 References'
                     };
                     return (
                       <button

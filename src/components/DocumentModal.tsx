@@ -322,17 +322,89 @@ export default function DocumentModal({
        {/* Header */}
 <div className="p-6 border-b border-gray-700 flex justify-between items-start">
   <div className="flex-1">
-    {/* Display full_name if available */}
-    {document && document.full_name && (
+    {/* Main heading - use display name */}
+    <h2 className="text-2xl font-semibold text-blue-400 mb-3">
+      {document?.name || document?.doc_id || docId}
+    </h2>
+    
+    {/* ✅ NEW: Show hierarchy for index nodes */}
+    {document?.hierarchy && Object.keys(document.hierarchy).length > 0 && (
+      <div className="space-y-1 text-sm text-gray-300 mb-3 font-mono">
+        {document.hierarchy.title && (
+          <div>
+            <span className="text-gray-500">Title:</span> {document.hierarchy.title}
+          </div>
+        )}
+        {document.hierarchy.part && (
+          <div>
+            <span className="text-gray-500">Part:</span> {document.hierarchy.part}
+          </div>
+        )}
+        {document.hierarchy.chapter && (
+          <div>
+            <span className="text-gray-500">Chapter:</span> {document.hierarchy.chapter}
+          </div>
+        )}
+        {document.hierarchy.part2 && (
+          <div>
+            <span className="text-gray-500">Part:</span> {document.hierarchy.part2}
+          </div>
+        )}
+        {document.hierarchy.subpart && (
+          <div>
+            <span className="text-gray-500">Subpart:</span> {document.hierarchy.subpart}
+          </div>
+        )}
+        {document.hierarchy.subchapter && (
+          <div>
+            <span className="text-gray-500">Subchapter:</span> {document.hierarchy.subchapter}
+          </div>
+        )}
+        {document.hierarchy.section && (
+          <div>
+            <span className="text-gray-500">Section:</span> {document.hierarchy.section}
+          </div>
+        )}
+        {document.hierarchy.subsection && (
+          <div>
+            <span className="text-gray-500">Subsection:</span> {document.hierarchy.subsection}
+          </div>
+        )}
+        {document.hierarchy.paragraph && (
+          <div>
+            <span className="text-gray-500">Paragraph:</span> {document.hierarchy.paragraph}
+          </div>
+        )}
+        {document.hierarchy.subparagraph && (
+          <div>
+            <span className="text-gray-500">Subparagraph:</span> {document.hierarchy.subparagraph}
+          </div>
+        )}
+        {document.hierarchy.clause && (
+          <div>
+            <span className="text-gray-500">Clause:</span> {document.hierarchy.clause}
+          </div>
+        )}
+        {document.hierarchy.subclause && (
+          <div>
+            <span className="text-gray-500">Subclause:</span> {document.hierarchy.subclause}
+          </div>
+        )}
+        {/* ✅ Show heading at the bottom if it exists and is not empty */}
+        {document.index_heading && document.index_heading.trim() !== '' && (
+          <div>
+            <span className="text-gray-500">Heading:</span> {document.index_heading}
+          </div>
+        )}
+      </div>
+    )}
+    
+    {/* Full name if available (for non-index nodes) */}
+    {document && document.full_name && !document.hierarchy && (
       <h3 className="text-lg font-medium text-gray-400 mb-1">
         {document.full_name}
       </h3>
     )}
-    
-    {/* Display node name/id as the main heading */}
-    <h2 className="text-2xl font-semibold text-blue-400 mb-2">
-      {document?.name || document?.doc_id || docId}
-    </h2>
     
     {document && (
       <div className="space-y-1 text-sm">
@@ -365,32 +437,42 @@ export default function DocumentModal({
 </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 pr-12" ref={contentRef}>
-          {loading && (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-gray-400">Loading section text...</div>
-            </div>
-          )}
+{/* Content */}
+<div className="flex-1 overflow-y-auto p-6 pr-12" ref={contentRef}>
+  {loading && (
+    <div className="flex items-center justify-center py-12">
+      <div className="text-gray-400">Loading section text...</div>
+    </div>
+  )}
 
-          {error && (
-            <div className="bg-red-900/30 border border-red-700 rounded p-4 text-red-300">
-              {error}
-            </div>
-          )}
+  {error && (
+    <div className="bg-red-900/30 border border-red-700 rounded p-4 text-red-300">
+      {error}
+    </div>
+  )}
 
-          {!loading && !error && documentText && (
-            <div className="prose prose-invert max-w-none">
-              <div className="whitespace-pre-wrap text-gray-300 leading-relaxed font-mono text-sm">
-                {highlightText(
-                  documentText,
-                  highlightTerm,
-                  secondaryHighlightTerm || null,
-                  searchKeywords || null,
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+  {/* ✅ NEW: Show message when no text is available */}
+  {!loading && !error && (!documentText || documentText.trim() === '') && (
+    <div className="flex items-center justify-center py-12">
+      <div className="text-gray-400 text-center">
+        <p className="text-lg">Full text for this node is not available.</p>
+      </div>
+    </div>
+  )}
+
+  {!loading && !error && documentText && documentText.trim() !== '' && (
+    <div className="prose prose-invert max-w-none">
+      <div className="whitespace-pre-wrap text-gray-300 leading-relaxed font-mono text-sm">
+        {highlightText(
+          documentText,
+          highlightTerm,
+          secondaryHighlightTerm || null,
+          searchKeywords || null,
+        )}
+      </div>
+    </div>
+  )}
+</div>
 
         {/* Scroll indicator */}
         {!loading && !error && matchPositions.length > 0 && (

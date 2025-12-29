@@ -81,9 +81,14 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
       baseColor = '#AFBBE8'; // fallback steel color
     }
 
+    // ✅ NEW: Use display_label for index nodes, fallback to name
+    const displayName = n.node_type === 'index' && n.display_label 
+      ? n.display_label 
+      : n.name;
+
     return {
       id: n.id,
-      name: n.name,
+      name: displayName,
       node_type: n.node_type,
       category: n.category, // undefined for index nodes (shared)
       val: degree,
@@ -105,6 +110,9 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
       corp_total_num_forms: n.corp_total_num_forms,
       corp_amount_per_form: n.corp_amount_per_form,
       corp_num_lines: n.corp_num_lines,
+
+      hierarchy: n.hierarchy,
+      index_heading: n.index_heading,
 
       properties: {
         full_name: n.full_name,
@@ -353,6 +361,8 @@ export async function fetchDocument(docId: string): Promise<Document> {
     line_name: node?.node_type === 'line' ? node.name : undefined,
     section_name: node?.node_type === 'index' ? node.name : undefined,
     regulation_name: node?.node_type === 'regulation' ? node.name : undefined,
+    hierarchy: node?.hierarchy,
+    index_heading: node?.index_heading,
   };
 }
 

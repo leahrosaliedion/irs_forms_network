@@ -658,9 +658,9 @@ export default function RightSidebar({
                           </div>
                           <button
                             onClick={() => setDocumentToView(neighborDetails.id)}
-                            className="mt-2 text-xs px-3 py-1 bg-cyan-600 hover:bg-cyan-700 rounded text-white font-medium transition-colors"
+                            className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors w-full"
                           >
-                            View full section text
+                            View full text
                           </button>
                         </div>
                       )}
@@ -684,9 +684,9 @@ export default function RightSidebar({
                           )}
                           <button
                             onClick={() => setDocumentToView(neighborDetails.id)}
-                            className="mt-2 text-xs px-3 py-1 bg-pink-600 hover:bg-pink-700 rounded text-white font-medium transition-colors"
+                            className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium transition-colors w-full"
                           >
-                            View full regulation text
+                            View full text
                           </button>
                         </div>
                       )}

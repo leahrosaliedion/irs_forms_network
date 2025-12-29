@@ -75,6 +75,10 @@ function App() {
     return !localStorage.getItem('hasSeenWelcome');
   });
   const [isInitialized, setIsInitialized] = useState(false);
+  const [topDownGraphInfo, setTopDownGraphInfo] = useState<{
+  nodeCount: number;
+  linkCount: number;
+} | null>(null);
 
   // ✅ NEW: Derive the current category for RightSidebar
   const currentCategory = categoryFilter.size === 1 
@@ -283,6 +287,26 @@ function App() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+  if (buildMode === 'top-down' && relationships.length > 0) {
+    // Count unique nodes from relationships
+    const nodeSet = new Set<string>();
+    relationships.forEach(rel => {
+      const sourceId = rel.actor_id ?? rel.actor;
+      const targetId = rel.target_id ?? rel.target;
+      nodeSet.add(sourceId);
+      nodeSet.add(targetId);
+    });
+    
+    setTopDownGraphInfo({
+      nodeCount: nodeSet.size,
+      linkCount: relationships.length
+    });
+  } else if (buildMode === 'top-down') {
+    setTopDownGraphInfo(null);
+  }
+}, [buildMode, relationships]);
 
   const handleActorClick = useCallback((actorName: string | null) => {
     setSelectedActor(prev => {
@@ -537,6 +561,7 @@ function App() {
           onResetToTopDown={handleResetToTopDown}
           onBottomUpSearch={handleBottomUpSearch}
           displayGraphInfo={buildMode === 'bottom-up' ? displayGraphInfo : undefined}
+          topDownGraphInfo={topDownGraphInfo}
         />
       </div>
 
