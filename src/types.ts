@@ -10,6 +10,7 @@ export interface GraphNode extends d3.SimulationNodeDatum {
   color?: string;      // computed at runtime based on type + degree
   baseColor?: string;  // computed at runtime
   node_type: NodeType; // Required: 'form' | 'line' | 'index' | 'regulation'
+  display_label?: string | null
 
   // IRS Forms-specific metadata
   category?: 'individual' | 'corporation'; // Optional (only for form/line/regulation nodes; index nodes don't have category)
@@ -45,7 +46,6 @@ export interface GraphNode extends d3.SimulationNodeDatum {
   };
 
   // Legacy display properties (can be populated from properties if needed)
-  display_label?: string | null;
   full_name?: string;
   text?: string;
   definition?: string;
@@ -63,8 +63,8 @@ export interface GraphNode extends d3.SimulationNodeDatum {
 export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
-  edge_type: 'belongs_to' | 'cites_section' | 'cites_regulation'; // Note: 'cites_section' still refers to USC sections (index nodes)
-  action?: string;              // Optional: 'belongs to', 'cites', etc.
+  edge_type: 'belongs_to' | 'cites_section' | 'cites_regulation' | 'hierarchy' | 'reference'; // ✅ UPDATED: Added 'hierarchy' and 'reference'
+  action?: string;              // Optional: 'belongs to', 'cites', 'includes', 'references', etc.
   
   // Optional edge properties
   definition?: string;
@@ -147,7 +147,7 @@ export interface NetworkBuilderState {
   allowedNodeTypes: ('form' | 'line' | 'index' | 'regulation')[]; // ✅ UPDATED: 'section' → 'index'
   
   // Edge type filters
-  allowedEdgeTypes: ('belongs_to' | 'cites_section' | 'cites_regulation')[]; // Note: edge names unchanged (they still reference sections)
+  allowedEdgeTypes: ('belongs_to' | 'cites_section' | 'cites_regulation' | 'hierarchy' | 'reference')[]; // ✅ UPDATED: Added 'hierarchy' and 'reference'
   
   // Category filter (individual vs corporation)
   allowedCategories: ('individual' | 'corporation')[]; // ✅ NEW: taxpayer type filter

@@ -13,7 +13,7 @@ import type {
 
 let cachedGraph: GraphData | null = null;
 
-// Stats based on IRS forms network
+// ✅ UPDATED: Stats now include hierarchy and reference edge types
 export async function fetchStats(): Promise<Stats> {
   return {
     totalDocuments: { count: 4422 },  // Total nodes
@@ -23,6 +23,8 @@ export async function fetchStats(): Promise<Stats> {
       { category: 'belongs_to', count: 1542 },
       { category: 'cites_section', count: 5216 },
       { category: 'cites_regulation', count: 1452 },
+      { category: 'hierarchy', count: 0 },      // Will be computed from actual data
+      { category: 'reference', count: 0 }       // Will be computed from actual data
     ],
   };
 }
@@ -41,6 +43,14 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
 
   console.log('📊 Loading merged IRS + Title 26 graph...');
   console.log(`Raw data: ${raw.nodes.length} nodes, ${raw.links.length} links`);
+
+  // ✅ NEW: Count edge types to verify hierarchy and reference edges are loaded
+  const edgeTypeCounts = new Map<string, number>();
+  raw.links.forEach((link) => {
+    const edgeType = link.edge_type || link.type || 'unknown';
+    edgeTypeCounts.set(edgeType, (edgeTypeCounts.get(edgeType) || 0) + 1);
+  });
+  console.log('📊 Edge type counts in raw data:', Object.fromEntries(edgeTypeCounts));
 
   // Compute degree for each node
   const degreeMap = new Map<string, number>();
@@ -105,13 +115,15 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
       full_name: n.full_name,
       text: n.text ?? n.properties?.text, // Title 26 text is in properties.text
       definition: n.definition,
+      display_label: n.display_label,
       color: baseColor,
       baseColor,
     };
   });
 
+  // ✅ UPDATED: Handle all 5 edge types including hierarchy and reference
   const links: GraphLink[] = raw.links.map((l) => {
-    const edgeType = l.type || 'reference';
+    const edgeType = l.edge_type || l.type || 'reference';
     
     let action: string;
     if (edgeType === 'belongs_to') {
@@ -120,8 +132,12 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
       action = 'cites section';
     } else if (edgeType === 'cites_regulation') {
       action = 'cites regulation';
+    } else if (edgeType === 'hierarchy') {
+      action = l.action || 'includes'; // Use action from JSON (e.g., "includes")
+    } else if (edgeType === 'reference') {
+      action = l.action || 'references'; // Use action from JSON (e.g., "references")
     } else {
-      action = edgeType;
+      action = l.action || edgeType;
     }
 
     return {
@@ -141,6 +157,13 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
       return acc;
     }, {} as Record<string, number>)
   );
+  
+  // ✅ NEW: Log edge type breakdown after processing
+  const finalEdgeTypeCounts = new Map<string, number>();
+  links.forEach((link) => {
+    finalEdgeTypeCounts.set(link.edge_type, (finalEdgeTypeCounts.get(link.edge_type) || 0) + 1);
+  });
+  console.log('📊 Final edge type counts:', Object.fromEntries(finalEdgeTypeCounts));
 
   cachedGraph = { nodes, links };
   return cachedGraph;
@@ -163,6 +186,7 @@ export async function fetchRelationships(
     return { relationships: [], totalBeforeLimit: 0 };
   }
 
+  // ✅ Filter by edge type (categories param is actually edge types)
   let filteredLinks = cachedGraph.links;
   if (categories.length > 0) {
     filteredLinks = filteredLinks.filter((link) =>
@@ -183,7 +207,7 @@ export async function fetchRelationships(
       doc_id: sourceId,
       timestamp: link.timestamp || null,
       actor: sourceNode?.name || sourceId,
-      action: link.action,
+      action: link.action || link.edge_type,
       target: targetNode?.name || targetId,
       location: link.location || null,
       tags: [],
@@ -232,6 +256,7 @@ export async function fetchActorRelationships(
     return sourceId === actorNode.id || targetId === actorNode.id;
   });
 
+  // ✅ Filter by edge type
   if (categories.length > 0) {
     relatedLinks = relatedLinks.filter((link) =>
       categories.includes(link.edge_type)
@@ -249,7 +274,7 @@ export async function fetchActorRelationships(
       doc_id: sourceId,
       timestamp: link.timestamp || null,
       actor: sourceNode?.name || sourceId,
-      action: link.action,
+      action: link.action || link.edge_type,
       target: targetNode?.name || targetId,
       location: link.location || null,
       tags: [],
@@ -326,7 +351,7 @@ export async function fetchDocument(docId: string): Promise<Document> {
     text: node?.text,
     form_name: node?.node_type === 'form' ? node.name : undefined,
     line_name: node?.node_type === 'line' ? node.name : undefined,
-    section_name: node?.node_type === 'index' ? node.name : undefined, // changed from 'section'
+    section_name: node?.node_type === 'index' ? node.name : undefined,
     regulation_name: node?.node_type === 'regulation' ? node.name : undefined,
   };
 }

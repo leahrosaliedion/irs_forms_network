@@ -59,6 +59,13 @@ export default function NetworkGraph({
       console.log('Nodes:', externalGraphData.nodes.length);
       console.log('Links:', externalGraphData.links.length);
       
+      // ✅ NEW: Log edge type breakdown
+      const edgeTypeCounts = new Map<string, number>();
+      externalGraphData.links.forEach(link => {
+        edgeTypeCounts.set(link.edge_type, (edgeTypeCounts.get(link.edge_type) || 0) + 1);
+      });
+      console.log('📊 Edge types in external graph:', Object.fromEntries(edgeTypeCounts));
+      
       const filteredNodes = externalGraphData.nodes;
       const validNodeIds = new Set(filteredNodes.map(n => n.id));
       
@@ -420,56 +427,55 @@ export default function NetworkGraph({
       .style('z-index', '1000')
       .style('max-width', '300px');
 
-   node.on('mouseover', (event, d) => {
-  // ✅ DEBUG: Log what data is in the node
-  if (d.node_type === 'line') {
-    console.log('Line node hover:', {
-      id: d.id,
-      name: d.name,
-      amount: d.amount,
-      num_forms: d.num_forms,
-      fullNode: d
-    });
-  }
+    node.on('mouseover', (event, d) => {
+      // ✅ DEBUG: Log what data is in the node
+      if (d.node_type === 'line') {
+        console.log('Line node hover:', {
+          id: d.id,
+          name: d.name,
+          amount: d.amount,
+          num_forms: d.num_forms,
+          fullNode: d
+        });
+      }
 
-  const categoryBadge = d.category === 'individual' ? '👤' : d.category === 'corporation' ? '🏢' : d.node_type === 'index' ? '📖' : '';
-  const nodeTypeLabel = {
-    'form': 'Form',
-    'line': 'Line',
-    'index': 'USC Section',
-    'regulation': 'Regulation'
-  }[d.node_type] || d.node_type;
+      const categoryBadge = d.category === 'individual' ? '👤' : d.category === 'corporation' ? '🏢' : d.node_type === 'index' ? '📖' : '';
+      const nodeTypeLabel = {
+        'form': 'Form',
+        'line': 'Line',
+        'index': 'USC Section',
+        'regulation': 'Regulation'
+      }[d.node_type] || d.node_type;
 
-  let tooltipHtml = `<strong>${categoryBadge} ${d.name}</strong><br/>`;
-  tooltipHtml += `<span style="color: #9ca3af;">${nodeTypeLabel}`;
-  if (d.category) {
-    tooltipHtml += ` · ${d.category}`;
-  }
-  tooltipHtml += `</span><br/>`;
-  tooltipHtml += `${d.val} connections in view`;
+      let tooltipHtml = `<strong>${categoryBadge} ${d.name}</strong><br/>`;
+      tooltipHtml += `<span style="color: #9ca3af;">${nodeTypeLabel}`;
+      if (d.category) {
+        tooltipHtml += ` · ${d.category}`;
+      }
+      tooltipHtml += `</span><br/>`;
+      tooltipHtml += `${d.val} connections in view`;
 
-  // ✅ ALWAYS show amount and num_forms for line nodes
-  if (d.node_type === 'line') {
-    const amountDisplay = d.amount !== null && d.amount !== undefined
-      ? `$${d.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : 'N/A';
-    
-    const numFormsDisplay = d.num_forms !== null && d.num_forms !== undefined
-      ? d.num_forms.toLocaleString()
-      : 'N/A';
-    
-    tooltipHtml += `<br/><span style="color: #C679B4;">Amount: ${amountDisplay}</span>`;
-    tooltipHtml += `<br/><span style="color: #C679B4;">Forms: ${numFormsDisplay}</span>`;
-  }
+      // ✅ ALWAYS show amount and num_forms for line nodes
+      if (d.node_type === 'line') {
+        const amountDisplay = d.amount !== null && d.amount !== undefined
+          ? `$${d.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : 'N/A';
+        
+        const numFormsDisplay = d.num_forms !== null && d.num_forms !== undefined
+          ? d.num_forms.toLocaleString()
+          : 'N/A';
+        
+        tooltipHtml += `<br/><span style="color: #C679B4;">Amount: ${amountDisplay}</span>`;
+        tooltipHtml += `<br/><span style="color: #C679B4;">Forms: ${numFormsDisplay}</span>`;
+      }
 
-  tooltip.style('visibility', 'visible').html(tooltipHtml);
+      tooltip.style('visibility', 'visible').html(tooltipHtml);
 
-  let totalCount = actorTotalCounts[d.name] || onDemandCounts[d.name];
-  if (totalCount !== undefined && totalCount !== d.val) {
-    tooltip.html(tooltipHtml + `<br/><span style="color: #9ca3af;">(${totalCount} total)</span>`);
-  }
-})
-
+      let totalCount = actorTotalCounts[d.name] || onDemandCounts[d.name];
+      if (totalCount !== undefined && totalCount !== d.val) {
+        tooltip.html(tooltipHtml + `<br/><span style="color: #9ca3af;">(${totalCount} total)</span>`);
+      }
+    })
     .on('mousemove', (event) => {
       tooltip
         .style('top', (event.pageY - 10) + 'px')
@@ -479,6 +485,7 @@ export default function NetworkGraph({
       tooltip.style('visibility', 'hidden');
     });
 
+    // ✅ UPDATED: Link hover tooltips now include hierarchy and reference edge types
     link.on('mouseover', (event, d) => {
       const linkData = d as GraphLink & { count?: number };
       const count = linkData.count || 1;
@@ -486,7 +493,9 @@ export default function NetworkGraph({
       const edgeTypeLabels: Record<string, string> = {
         'belongs_to': 'Belongs to',
         'cites_section': 'Cites USC section',
-        'cites_regulation': 'Cites regulation'
+        'cites_regulation': 'Cites regulation',
+        'hierarchy': 'Title 26 hierarchy',
+        'reference': 'Code reference'
       };
       
       const edgeLabel = edgeTypeLabels[linkData.edge_type] || linkData.action;

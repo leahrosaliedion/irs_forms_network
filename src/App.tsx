@@ -159,10 +159,12 @@ function App() {
       const indexNodes = fullGraph.nodes.filter(n => n.node_type === 'index').length;
       const regulationNodes = fullGraph.nodes.filter(n => n.node_type === 'regulation').length;
       
-      // Count by edge types
+      // ✅ UPDATED: Count by edge types including new hierarchy and reference edges
       const belongsToLinks = fullGraph.links.filter(l => l.edge_type === 'belongs_to').length;
       const citesSectionLinks = fullGraph.links.filter(l => l.edge_type === 'cites_section').length;
       const citesRegulationLinks = fullGraph.links.filter(l => l.edge_type === 'cites_regulation').length;
+      const hierarchyLinks = fullGraph.links.filter(l => l.edge_type === 'hierarchy').length;
+      const referenceLinks = fullGraph.links.filter(l => l.edge_type === 'reference').length;
       
       console.log('📊 Merged IRS + Title 26 Network Stats:', {
         forms: formNodes,
@@ -170,9 +172,17 @@ function App() {
         indexes: indexNodes,
         regulations: regulationNodes,
         totalNodes: fullGraph.nodes.length,
-        totalLinks: fullGraph.links.length
+        totalLinks: fullGraph.links.length,
+        edgeTypes: {
+          belongs_to: belongsToLinks,
+          cites_section: citesSectionLinks,
+          cites_regulation: citesRegulationLinks,
+          hierarchy: hierarchyLinks,
+          reference: referenceLinks
+        }
       });
       
+      // ✅ UPDATED: Include new edge types in stats
       setStats({
         totalDocuments: { count: fullGraph.nodes.length },
         totalTriples: { count: fullGraph.links.length },
@@ -180,11 +190,14 @@ function App() {
         categories: [
           { category: 'belongs_to', count: belongsToLinks },
           { category: 'cites_section', count: citesSectionLinks },
-          { category: 'cites_regulation', count: citesRegulationLinks }
+          { category: 'cites_regulation', count: citesRegulationLinks },
+          { category: 'hierarchy', count: hierarchyLinks },
+          { category: 'reference', count: referenceLinks }
         ]
       });
       
-      setEnabledCategories(new Set(['belongs_to', 'cites_section', 'cites_regulation']));
+      // ✅ UPDATED: Enable all edge types by default
+      setEnabledCategories(new Set(['belongs_to', 'cites_section', 'cites_regulation', 'hierarchy', 'reference']));
       setIsInitialized(true);
     }
   }, [fullGraph]);
@@ -409,11 +422,12 @@ function App() {
       console.log('Edge type filters:', params.edgeTypes);
       console.log('Category filters:', params.categoryFilter);
       
+      // ✅ UPDATED: Include new edge types in builder state
       const builderState: NetworkBuilderState = {
         searchTerms: terms,
-        searchFields: params.searchFields,
-        allowedNodeTypes: params.nodeTypes as ('form' | 'line' | 'index' | 'regulation')[], // changed 'section' to 'index'
-        allowedEdgeTypes: params.edgeTypes as ('belongs_to' | 'cites_section' | 'cites_regulation')[],
+        searchFields: params.searchFields as ('name' | 'full_name' | 'definition' | 'text')[],
+        allowedNodeTypes: params.nodeTypes as ('form' | 'line' | 'index' | 'regulation')[],
+        allowedEdgeTypes: params.edgeTypes as ('belongs_to' | 'cites_section' | 'cites_regulation' | 'hierarchy' | 'reference')[],
         allowedCategories: params.categoryFilter as ('individual' | 'corporation')[],
         allowedForms: [],
         seedNodeIds: [],

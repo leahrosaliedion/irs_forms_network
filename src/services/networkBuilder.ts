@@ -36,6 +36,14 @@ export class NetworkBuilder {
     });
     
     console.log(`✅ Adjacency map built in ${(performance.now() - startTime).toFixed(2)}ms`);
+    
+    // ✅ NEW: Log edge type statistics for debugging
+    const edgeTypeCount = new Map<string, number>();
+    links.forEach(link => {
+      const count = edgeTypeCount.get(link.edge_type) || 0;
+      edgeTypeCount.set(link.edge_type, count + 1);
+    });
+    console.log('📊 Edge types in graph:', Object.fromEntries(edgeTypeCount));
   }
 
   /**
@@ -137,8 +145,10 @@ export class NetworkBuilder {
                        allowedNodeTypes.includes(node.node_type);
       
       // Category filter - if empty, allow all
+      // ✅ UPDATED: Handle index nodes which don't have categories
       const categoryMatch = allowedCategories.length === 0 || 
-                           allowedCategories.includes(node.category);
+                           node.node_type === 'index' || // Index nodes are category-agnostic
+                           allowedCategories.includes(node.category || '');
 
       // Node must match both filters (if active)
       if (typeMatch && categoryMatch) {
@@ -156,6 +166,7 @@ export class NetworkBuilder {
   /**
    * Expand from seed nodes by N hops, limiting neighbors per node
    * Optimized using pre-built adjacency map for O(1) lookups
+   * ✅ UPDATED: Now supports filtering by edge types including hierarchy and reference
    */
   expandFromSeeds(
     seedIds: Set<string>,
@@ -166,6 +177,8 @@ export class NetworkBuilder {
     const expanded = new Set<string>(seedIds);
     let currentLayer = new Set<string>(seedIds);
 
+    console.log(`🔍 Expanding from ${seedIds.size} seeds, depth=${depth}, allowed edges:`, allowedEdgeTypes);
+
     for (let i = 0; i < depth; i++) {
       const nextLayer = new Set<string>();
 
@@ -173,7 +186,7 @@ export class NetworkBuilder {
         // O(1) lookup instead of filtering all links
         const neighbors = this.adjacencyMap.get(nodeId) || [];
         
-        // Filter by edge type if specified
+        // ✅ Filter by edge type if specified (includes hierarchy and reference)
         const filteredNeighbors = allowedEdgeTypes.length === 0
           ? neighbors
           : neighbors.filter(n => allowedEdgeTypes.includes(n.edgeType));
@@ -191,6 +204,7 @@ export class NetworkBuilder {
         });
       });
 
+      console.log(`  Layer ${i + 1}: added ${nextLayer.size} new nodes`);
       currentLayer = nextLayer;
       if (currentLayer.size === 0) break;
     }
@@ -201,6 +215,7 @@ export class NetworkBuilder {
 
   /**
    * Build network from current filter state
+   * ✅ UPDATED: Now handles all 5 edge types (belongs_to, cites_section, cites_regulation, hierarchy, reference)
    */
   buildNetwork(state: NetworkBuilderState, searchLogic: 'AND' | 'OR' = 'OR', nodeRankingMode: 'global' | 'subgraph' = 'global'): FilteredGraph {
     const startTime = performance.now();
@@ -208,6 +223,7 @@ export class NetworkBuilder {
     console.log('Building network with state:', state);
     console.log('Search logic:', searchLogic);
     console.log('Node ranking mode:', nodeRankingMode);
+    console.log('Allowed edge types:', state.allowedEdgeTypes); // ✅ NEW: Log allowed edge types
     
     let candidateNodeIds = new Set<string>();
     let seedNodeIds = new Set<string>();
@@ -239,7 +255,7 @@ export class NetworkBuilder {
           seedNodeIds,
           state.expansionDepth,
           state.maxNodesPerExpansion,
-          state.allowedEdgeTypes
+          state.allowedEdgeTypes // ✅ Pass allowed edge types including hierarchy/reference
         );
         console.log(`⏱️ Step 1b (expandFromSeeds): ${(performance.now() - expandStart).toFixed(2)}ms`);
       } else {
@@ -264,8 +280,10 @@ export class NetworkBuilder {
           
           const typeMatch = state.allowedNodeTypes.length === 0 || 
                            state.allowedNodeTypes.includes(node.node_type);
+          // ✅ UPDATED: Handle index nodes in category matching
           const categoryMatch = state.allowedCategories.length === 0 || 
-                               state.allowedCategories.includes(node.category);
+                               node.node_type === 'index' || // Index nodes are category-agnostic
+                               state.allowedCategories.includes(node.category || '');
           
           return typeMatch && categoryMatch;
         })
@@ -299,6 +317,7 @@ export class NetworkBuilder {
     const candidateNodes = Array.from(candidateNodeMap.values());
 
     // Step 4: Filter links (only between candidate nodes)
+    // ✅ UPDATED: Now filters by all 5 edge types
     const candidateLinks = this.allLinks.filter(link => {
       const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
       const targetId = typeof link.target === 'string' ? link.target : link.target.id;
@@ -309,7 +328,14 @@ export class NetworkBuilder {
       return edgeTypeMatch && candidateNodeMap.has(sourceId) && candidateNodeMap.has(targetId);
     });
 
+    // ✅ NEW: Log edge type breakdown in filtered links
+    const filteredEdgeTypeCount = new Map<string, number>();
+    candidateLinks.forEach(link => {
+      const count = filteredEdgeTypeCount.get(link.edge_type) || 0;
+      filteredEdgeTypeCount.set(link.edge_type, count + 1);
+    });
     console.log(`After edge filtering: ${candidateNodes.length} nodes, ${candidateLinks.length} links`);
+    console.log('Edge type breakdown:', Object.fromEntries(filteredEdgeTypeCount));
 
     // Step 5: Remove isolated nodes (nodes with no edges)
     const nodesWithEdges = new Set<string>();
@@ -415,70 +441,67 @@ export class NetworkBuilder {
     // Create strength function (0 to 1 based on connections)
     const strength = (v: number) => Math.pow(v / maxVal, 0.6); // Lower exponent = more dramatic gradient
 
-// Color scales for IRS forms node types - EXPANDED gradients
-const formColorScale = (t: number) => {
-  // Teal gradient for forms
-  const r1 = 0xD9, g1 = 0xEE, b1 = 0xF5; // Very light teal
-  const r2 = 0x88, g2 = 0xBA, b2 = 0xCE; // Teal
-  const r = Math.round(r1 + (r2 - r1) * t);
-  const g = Math.round(g1 + (g2 - g1) * t);
-  const b = Math.round(b1 + (b2 - b1) * t);
-  return `rgb(${r}, ${g}, ${b})`;
-};
+    // Color scales for IRS forms node types - EXPANDED gradients
+    const formColorScale = (t: number) => {
+      // Teal gradient for forms
+      const r1 = 0xD9, g1 = 0xEE, b1 = 0xF5; // Very light teal
+      const r2 = 0x88, g2 = 0xBA, b2 = 0xCE; // Teal
+      const r = Math.round(r1 + (r2 - r1) * t);
+      const g = Math.round(g1 + (g2 - g1) * t);
+      const b = Math.round(b1 + (b2 - b1) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    };
 
-const lineColorScale = (t: number) => {
-  // Magenta gradient for lines
-  const r1 = 0xD9, g1 = 0x9B, b1 = 0xC9; // Very light magenta
-  const r2 = 0x9C, g2 = 0x33, b2 = 0x91; // Magenta
-  const r = Math.round(r1 + (r2 - r1) * t);
-  const g = Math.round(g1 + (g2 - g1) * t);
-  const b = Math.round(b1 + (b2 - b1) * t);
-  return `rgb(${r}, ${g}, ${b})`;
-};
+    const lineColorScale = (t: number) => {
+      // Magenta gradient for lines
+      const r1 = 0xD9, g1 = 0x9B, b1 = 0xC9; // Very light magenta
+      const r2 = 0x9C, g2 = 0x33, b2 = 0x91; // Magenta
+      const r = Math.round(r1 + (r2 - r1) * t);
+      const g = Math.round(g1 + (g2 - g1) * t);
+      const b = Math.round(b1 + (b2 - b1) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    };
 
-const indexColorScale = (t: number) => {
-  // Ink gradient for index nodes
-  const r1 = 0x9B, g1 = 0x8B, b1 = 0xCC; // Very light purple
-  const r2 = 0x41, g2 = 0x37, b2 = 0x8F; // Ink
-  const r = Math.round(r1 + (r2 - r1) * t);
-  const g = Math.round(g1 + (g2 - g1) * t);
-  const b = Math.round(b1 + (b2 - b1) * t);
-  return `rgb(${r}, ${g}, ${b})`;
-};
+    const indexColorScale = (t: number) => {
+      // Ink gradient for index nodes
+      const r1 = 0x9B, g1 = 0x8B, b1 = 0xCC; // Very light purple
+      const r2 = 0x41, g2 = 0x37, b2 = 0x8F; // Ink
+      const r = Math.round(r1 + (r2 - r1) * t);
+      const g = Math.round(g1 + (g2 - g1) * t);
+      const b = Math.round(b1 + (b2 - b1) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    };
 
-const regulationColorScale = (t: number) => {
-  // Lilac gradient for regulations
-  const r1 = 0xD9, g1 = 0xC6, b1 = 0xE3; // Very light lilac
-  const r2 = 0xA6, g2 = 0x7E, b2 = 0xB3; // Lilac
-  const r = Math.round(r1 + (r2 - r1) * t);
-  const g = Math.round(g1 + (g2 - g1) * t);
-  const b = Math.round(b1 + (b2 - b1) * t);
-  return `rgb(${r}, ${g}, ${b})`;
-};
+    const regulationColorScale = (t: number) => {
+      // Lilac gradient for regulations
+      const r1 = 0xD9, g1 = 0xC6, b1 = 0xE3; // Very light lilac
+      const r2 = 0xA6, g2 = 0x7E, b2 = 0xB3; // Lilac
+      const r = Math.round(r1 + (r2 - r1) * t);
+      const g = Math.round(g1 + (g2 - g1) * t);
+      const b = Math.round(b1 + (b2 - b1) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    };
 
+    // Apply colors to each node based on type and degree strength
+    nodes.forEach(node => {
+      const t = strength(node.val || 1);
+      let color: string;
 
-// Apply colors to each node based on type and degree strength
-nodes.forEach(node => {
-  const t = strength(node.val || 1);
-  let color: string;
+      if (node.node_type === 'form') {
+        color = formColorScale(t);
+      } else if (node.node_type === 'line') {
+        color = lineColorScale(t);
+      } else if (node.node_type === 'index') {
+        color = indexColorScale(t);
+      } else if (node.node_type === 'regulation') {
+        color = regulationColorScale(t);
+      } else {
+        color = '#AFBBE8'; // fallback steel color
+      }
 
-  if (node.node_type === 'form') {
-    color = formColorScale(t);
-  } else if (node.node_type === 'line') {
-    color = lineColorScale(t);
-  } else if (node.node_type === 'index') {
-    color = indexColorScale(t);
-  } else if (node.node_type === 'regulation') {
-    color = regulationColorScale(t);
-  } else {
-    color = '#AFBBE8'; // fallback steel color
-  }
-
-  node.color = color;
-  node.baseColor = color;
-});
-
-
+      node.color = color;
+      node.baseColor = color;
+    });
 
     console.log(`⏱️ Step 8 (color computation): ${(performance.now() - colorStart).toFixed(2)}ms`);
     console.log('🎨 Color computation complete. Sample colored nodes:');

@@ -153,16 +153,19 @@ export default function Sidebar({
   const limitDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [nodeRankingMode, setNodeRankingMode] = useState<'global' | 'subgraph'>('global');
 
-  // IRS Forms-specific filters
-  const [nodeTypeFilters, setNodeTypeFilters] = useState<Set<'form' | 'line' | 'section' | 'regulation'>>(
-    new Set(['form', 'line', 'section', 'regulation'])
+  // ✅ UPDATED: Changed 'section' to 'index' to match your types
+  const [nodeTypeFilters, setNodeTypeFilters] = useState<Set<'form' | 'line' | 'index' | 'regulation'>>(
+    new Set(['form', 'line', 'index', 'regulation'])
   );
-  const [edgeTypeFilters, setEdgeTypeFilters] = useState<Set<'belongs_to' | 'cites_section' | 'cites_regulation'>>(
-    new Set(['belongs_to', 'cites_section', 'cites_regulation'])
+  
+  // ✅ UPDATED: Added 'hierarchy' and 'reference' edge types
+  const [edgeTypeFilters, setEdgeTypeFilters] = useState<Set<'belongs_to' | 'cites_section' | 'cites_regulation' | 'hierarchy' | 'reference'>>(
+    new Set(['belongs_to', 'cites_section', 'cites_regulation', 'hierarchy', 'reference'])
   );
+  
   const [bottomUpCategoryFilter, setBottomUpCategoryFilter] = useState<Set<'individual' | 'corporation'>>(
-  new Set(['individual'])
-);
+    new Set(['individual'])
+  );
   
   const [maxNodes, setMaxNodes] = useState(1000);
   const [expansionDegree, setExpansionDegree] = useState(1);
@@ -235,22 +238,23 @@ export default function Sidebar({
     
     if (buildMode === 'bottom-up' && onBottomUpSearch) {
       onBottomUpSearch({
-  keywords: localKeywords,
-  expansionDegree: expansionDegree,
-  maxNodes: maxNodes,
-  nodeTypes: Array.from(nodeTypeFilters),
-  edgeTypes: Array.from(edgeTypeFilters),
-  searchFields: Array.from(searchFields),
-  searchLogic: searchLogic,
-  categoryFilter: Array.from(bottomUpCategoryFilter),  // ← Use bottomUpCategoryFilter
-  nodeRankingMode  
-});
+        keywords: localKeywords,
+        expansionDegree: expansionDegree,
+        maxNodes: maxNodes,
+        nodeTypes: Array.from(nodeTypeFilters),
+        edgeTypes: Array.from(edgeTypeFilters),
+        searchFields: Array.from(searchFields),
+        searchLogic: searchLogic,
+        categoryFilter: Array.from(bottomUpCategoryFilter),
+        nodeRankingMode  
+      });
     } else {
       onKeywordsChange(localKeywords);
     }
   };
 
-  const toggleNodeType = (type: 'form' | 'line' | 'section' | 'regulation') => {
+  // ✅ UPDATED: Changed 'section' to 'index'
+  const toggleNodeType = (type: 'form' | 'line' | 'index' | 'regulation') => {
     setNodeTypeFilters(prev => {
       const next = new Set(prev);
       if (next.has(type)) {
@@ -262,7 +266,8 @@ export default function Sidebar({
     });
   };
 
-  const toggleEdgeType = (type: 'belongs_to' | 'cites_section' | 'cites_regulation') => {
+  // ✅ UPDATED: Added 'hierarchy' and 'reference' to edge type toggle
+  const toggleEdgeType = (type: 'belongs_to' | 'cites_section' | 'cites_regulation' | 'hierarchy' | 'reference') => {
     setEdgeTypeFilters(prev => {
       const next = new Set(prev);
       if (next.has(type)) {
@@ -275,27 +280,28 @@ export default function Sidebar({
   };
 
   const toggleCategory = (category: 'individual' | 'corporation') => {
-  setBottomUpCategoryFilter(prev => {
-    const next = new Set(prev);
-    if (next.has(category)) {
-      next.delete(category);
-    } else {
-      next.add(category);
-    }
-    return next;
-  });
-};
+    setBottomUpCategoryFilter(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
 
   const selectAllNodeTypes = () => {
-    setNodeTypeFilters(new Set(['form', 'line', 'section', 'regulation']));
+    setNodeTypeFilters(new Set(['form', 'line', 'index', 'regulation']));
   };
 
   const deselectAllNodeTypes = () => {
     setNodeTypeFilters(new Set());
   };
 
+  // ✅ UPDATED: Include new edge types in select/deselect all
   const selectAllEdgeTypes = () => {
-    setEdgeTypeFilters(new Set(['belongs_to', 'cites_section', 'cites_regulation']));
+    setEdgeTypeFilters(new Set(['belongs_to', 'cites_section', 'cites_regulation', 'hierarchy', 'reference']));
   };
 
   const deselectAllEdgeTypes = () => {
@@ -303,11 +309,11 @@ export default function Sidebar({
   };
 
   const selectAllCategories = () => {
-    setCategoryFilter(new Set(['individual', 'corporation']));
+    setBottomUpCategoryFilter(new Set(['individual', 'corporation']));
   };
 
   const deselectAllCategories = () => {
-    setCategoryFilter(new Set());
+    setBottomUpCategoryFilter(new Set());
   };
 
   const toggleSearchField = (field: string) => {
@@ -459,11 +465,10 @@ export default function Sidebar({
                       className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                     />
                     <div className="flex justify-between text-xs text-gray-500 mt-1">
-        <span>100</span>
-        <span>1500</span>
-        <span>3000</span>
-      </div>
-
+                      <span>100</span>
+                      <span>1500</span>
+                      <span>3000</span>
+                    </div>
                   </div>
                 </>
               )}
@@ -510,10 +515,10 @@ export default function Sidebar({
                       className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                     />
                     <div className="flex justify-between text-xs text-gray-500 mt-1">
-        <span>100</span>
-        <span>2000</span>
-        <span>4000</span>
-      </div>
+                      <span>100</span>
+                      <span>2000</span>
+                      <span>4000</span>
+                    </div>
                   </div>
 
                   {/* Node Ranking Mode */}
@@ -567,80 +572,77 @@ export default function Sidebar({
           </button>
           {filtersExpanded && (
             <>
-
               {/* Taxpayer Category Toggle - Top-down mode */}
-    {buildMode === 'top-down' && (
-      <div className="mb-4">
-        <label className="block text-sm text-gray-400 mb-2">
-          Show taxpayer types:
-        </label>
-        <div className="flex gap-2">
-          <button
-            onClick={() => onToggleCategoryFilter('individual')}
-            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-              categoryFilter.has('individual')
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-            }`}
-          >
-            👤 Individual
-          </button>
-          <button
-            onClick={() => onToggleCategoryFilter('corporation')}
-            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-              categoryFilter.has('corporation')
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-            }`}
-          >
-            🏢 Corporation
-          </button>
-        </div>
-        <p className="text-xs text-gray-500 mt-2">
-  {categoryFilter.has('individual')
-    ? 'Showing individual forms only'
-    : 'Showing corporation forms only'}
-</p>
-      </div>
-    )}
+              {buildMode === 'top-down' && (
+                <div className="mb-4">
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Show taxpayer types:
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onToggleCategoryFilter('individual')}
+                      className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                        categoryFilter.has('individual')
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                    >
+                      👤 Individual
+                    </button>
+                    <button
+                      onClick={() => onToggleCategoryFilter('corporation')}
+                      className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                        categoryFilter.has('corporation')
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                    >
+                      🏢 Corporation
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {categoryFilter.has('individual')
+                      ? 'Showing individual forms only'
+                      : 'Showing corporation forms only'}
+                  </p>
+                </div>
+              )}
 
               {/* Taxpayer Category Filter - Bottom-up mode */}
-{buildMode === 'bottom-up' && (
-  <div className="mb-4">
-    <label className="block text-sm text-gray-400 mb-2">
-      Taxpayer type:
-    </label>
-    <div className="flex gap-2">
-      <button
-        onClick={() => setBottomUpCategoryFilter(new Set(['individual']))}
-        className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-          bottomUpCategoryFilter.has('individual') && bottomUpCategoryFilter.size === 1
-            ? 'bg-blue-600 text-white'
-            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-        }`}
-      >
-        👤 Individual
-      </button>
-      <button
-        onClick={() => setBottomUpCategoryFilter(new Set(['corporation']))}
-        className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-          bottomUpCategoryFilter.has('corporation') && bottomUpCategoryFilter.size === 1
-            ? 'bg-purple-600 text-white'
-            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-        }`}
-      >
-        🏢 Corporation
-      </button>
-    </div>
-    <p className="text-xs text-gray-500 mt-2">
-      {bottomUpCategoryFilter.has('individual')
-        ? 'Searching individual forms only'
-        : 'Searching corporation forms only'}
-    </p>
-  </div>
-)}
-
-
+              {buildMode === 'bottom-up' && (
+                <div className="mb-4">
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Taxpayer type:
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setBottomUpCategoryFilter(new Set(['individual']))}
+                      className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                        bottomUpCategoryFilter.has('individual') && bottomUpCategoryFilter.size === 1
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                    >
+                      👤 Individual
+                    </button>
+                    <button
+                      onClick={() => setBottomUpCategoryFilter(new Set(['corporation']))}
+                      className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                        bottomUpCategoryFilter.has('corporation') && bottomUpCategoryFilter.size === 1
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                    >
+                      🏢 Corporation
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {bottomUpCategoryFilter.has('individual')
+                      ? 'Searching individual forms only'
+                      : 'Searching corporation forms only'}
+                  </p>
+                </div>
+              )}
 
               {/* Node Type Filters */}
               {buildMode === 'bottom-up' && (
@@ -670,7 +672,7 @@ export default function Sidebar({
                     {[
                       { value: 'form', label: 'Forms' },
                       { value: 'line', label: 'Form Lines' },
-                      { value: 'section', label: 'USC Sections' },
+                      { value: 'index', label: 'USC Sections' },
                       { value: 'regulation', label: 'Regulations' }
                     ].map(type => (
                       <label key={type.value} className="flex items-center gap-2 cursor-pointer">
@@ -711,11 +713,14 @@ export default function Sidebar({
                     </button>
                   </div>
 
+                  {/* ✅ UPDATED: Added hierarchy and reference edge types */}
                   <div className="space-y-2">
                     {[
                       { value: 'belongs_to', label: 'Belongs to (line → form)' },
                       { value: 'cites_section', label: 'Cites USC section' },
-                      { value: 'cites_regulation', label: 'Cites regulation' }
+                      { value: 'cites_regulation', label: 'Cites regulation' },
+                      { value: 'hierarchy', label: 'Title 26 hierarchy' },
+                      { value: 'reference', label: 'Code references' }
                     ].map(type => (
                       <label key={type.value} className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -939,13 +944,16 @@ export default function Sidebar({
                     Deselect all
                   </button>
                 </div>
+                {/* ✅ UPDATED: Added labels for new edge types */}
                 <div className="space-y-2">
                   {stats.categories.map((cat) => {
                     const isEnabled = enabledCategories.has(cat.category);
                     const labels: Record<string, string> = {
                       'belongs_to': 'Belongs to',
                       'cites_section': 'Cites section',
-                      'cites_regulation': 'Cites regulation'
+                      'cites_regulation': 'Cites regulation',
+                      'hierarchy': 'Title 26 hierarchy',
+                      'reference': 'Code references'
                     };
                     return (
                       <button
