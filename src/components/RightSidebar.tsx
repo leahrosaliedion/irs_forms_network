@@ -12,6 +12,8 @@ interface RightSidebarProps {
   onClose: () => void;
   yearRange: [number, number];
   keywords?: string;
+  categoryFilter?: 'individual' | 'corporation' | 'all';
+  onActorClick?: (actorName: string | null) => void;
 }
 
 export default function RightSidebar({
@@ -21,6 +23,8 @@ export default function RightSidebar({
   onClose,
   yearRange,
   keywords,
+  categoryFilter = 'all',
+  onActorClick,
 }: RightSidebarProps) {
   const [expandedRelId, setExpandedRelId] = useState<number | null>(null);
   const [documentToView, setDocumentToView] = useState<string | null>(null);
@@ -32,6 +36,65 @@ export default function RightSidebar({
   const [selectedActorDetails, setSelectedActorDetails] = useState<GraphNode | null>(null);
 
   if (!selectedActor) return null;
+
+  // ✅ Helper function to get display metrics based on category filter
+  const getDisplayMetrics = (node: GraphNode | null) => {
+    if (!node) return null;
+
+    // For form and line nodes with category field - use their direct metrics
+    if (node.category) {
+      return {
+        total_amount: node.total_amount,
+        total_num_forms: node.total_num_forms,
+        amount_per_form: node.amount_per_form,
+        num_lines: node.num_lines,
+        amount: node.amount, // for lines
+        num_forms: node.num_forms, // for lines
+      };
+    }
+
+    // For index nodes - use category-specific fields based on filter
+    if (node.node_type === 'index') {
+      if (categoryFilter === 'individual') {
+        return {
+          total_amount: node.ind_total_amount,
+          total_num_forms: node.ind_total_num_forms,
+          amount_per_form: node.ind_amount_per_form,
+          num_lines: node.ind_num_lines,
+        };
+      } else if (categoryFilter === 'corporation') {
+        return {
+          total_amount: node.corp_total_amount,
+          total_num_forms: node.corp_total_num_forms,
+          amount_per_form: node.corp_amount_per_form,
+          num_lines: node.corp_num_lines,
+        };
+      } else {
+        // 'all' - show combined totals
+        const ind_amt = node.ind_total_amount || 0;
+        const corp_amt = node.corp_total_amount || 0;
+        const ind_forms = node.ind_total_num_forms || 0;
+        const corp_forms = node.corp_total_num_forms || 0;
+        const total_amt = ind_amt + corp_amt;
+        const total_forms = ind_forms + corp_forms;
+
+        return {
+          total_amount: total_amt > 0 ? total_amt : null,
+          total_num_forms: total_forms > 0 ? total_forms : null,
+          amount_per_form: total_amt > 0 && total_forms > 0 ? total_amt / total_forms : null,
+          num_lines: (node.ind_num_lines || 0) + (node.corp_num_lines || 0),
+        };
+      }
+    }
+
+    // Fallback to direct metrics
+    return {
+      total_amount: node.total_amount,
+      total_num_forms: node.total_num_forms,
+      amount_per_form: node.amount_per_form,
+      num_lines: node.num_lines,
+    };
+  };
 
   // Fetch details for selected actor
   useEffect(() => {
@@ -130,7 +193,6 @@ export default function RightSidebar({
     return labels[type || ''] || type || 'Unknown';
   };
 
-  // ✅ Helper function to format amount/num_forms
   const formatAmount = (amount: number | null | undefined): string => {
     return amount !== null && amount !== undefined
       ? `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -143,42 +205,45 @@ export default function RightSidebar({
       : 'N/A';
   };
 
-  // ✅ Helper function to get color for node type
   const getNodeTypeColor = (type?: string): string => {
     const colors: Record<string, string> = {
-      'form': '#88BACE',      // teal
-      'line': '#C679B4',      // magenta
-      'index': '#41378F',     // ink
-      'section': '#41378F',   // ink (same as index)
-      'regulation': '#A67EB3' // lilac
+      'form': '#88BACE',
+      'line': '#C679B4',
+      'index': '#41378F',
+      'section': '#41378F',
+      'regulation': '#A67EB3'
     };
-    return colors[type || ''] || '#AFBBE8'; // fallback steel
+    return colors[type || ''] || '#AFBBE8';
   };
 
-  // ✅ Helper to format amount_per_form
   const formatAmountPerForm = (amount: number | null | undefined): string => {
     return amount !== null && amount !== undefined
       ? `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       : 'N/A';
   };
 
-  // ✅ Helper to get node type from relationship
   const getNodeTypeFromRel = (nodeName: string, nodeId?: string): string | undefined => {
-    // First try to get from cached details
     if (nodeId && nodeDetails[nodeId]) {
       return nodeDetails[nodeId]?.node_type;
     }
     
-    // Otherwise, extract from ID pattern: "type:category:name"
     if (nodeId) {
       const parts = nodeId.split(':');
       if (parts.length > 0) {
-        return parts[0]; // form, line, index, regulation
+        return parts[0];
       }
     }
     
     return undefined;
   };
+
+  const getCategoryFilterLabel = () => {
+    if (categoryFilter === 'individual') return 'Individual';
+    if (categoryFilter === 'corporation') return 'Corporation';
+    return 'Combined';
+  };
+
+  const selectedMetrics = getDisplayMetrics(selectedActorDetails);
 
   return (
     <>
@@ -211,85 +276,99 @@ export default function RightSidebar({
               
               {/* Node-specific details and actions */}
               <div className="mt-3 space-y-2">
-                {/* ✅ Line node: show individual metrics */}
-                {selectedActorDetails?.node_type === 'line' && (
-                  <div className="p-2 bg-pink-900/20 border border-pink-700/30 rounded text-xs space-y-1">
-                    <div>
-                      <span className="text-gray-400">Amount:</span>{' '}
-                      <span className="font-mono" style={{ color: '#C679B4' }}>
-                        {formatAmount(selectedActorDetails.amount)}
+                {/* Line node: neutral styling */}
+                {selectedActorDetails?.node_type === 'line' && selectedMetrics && (
+                  <div className="p-3 bg-gray-700/50 border border-gray-600 rounded text-xs space-y-2">
+                    <div className="text-xs font-semibold text-gray-300 mb-2 uppercase tracking-wide">
+                      Line Metrics
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Amount:</span>
+                      <span className="font-mono text-white font-medium">
+                        {formatAmount(selectedMetrics.amount)}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-gray-400">Forms:</span>{' '}
-                      <span className="font-mono" style={{ color: '#C679B4' }}>
-                        {formatNumForms(selectedActorDetails.num_forms)}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Forms:</span>
+                      <span className="font-mono text-white font-medium">
+                        {formatNumForms(selectedMetrics.num_forms)}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-gray-400">Amount per form:</span>{' '}
-                      <span className="font-mono" style={{ color: '#C679B4' }}>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Amount per form:</span>
+                      <span className="font-mono text-white font-medium">
                         {formatAmountPerForm(selectedActorDetails.amount_per_form)}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {/* ✅ Form node: show aggregated metrics */}
-                {selectedActorDetails?.node_type === 'form' && (
-                  <div className="p-2 bg-teal-900/20 border border-teal-700/30 rounded text-xs space-y-1">
-                    <div>
-                      <span className="text-gray-400">Total amount:</span>{' '}
-                      <span className="font-mono" style={{ color: '#88BACE' }}>
-                        {formatAmount(selectedActorDetails.total_amount)}
+                {/* Form node: neutral styling */}
+                {selectedActorDetails?.node_type === 'form' && selectedMetrics && (
+                  <div className="p-3 bg-gray-700/50 border border-gray-600 rounded text-xs space-y-2">
+                    <div className="text-xs font-semibold text-gray-300 mb-2 uppercase tracking-wide">
+                      Form Aggregates
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total amount:</span>
+                      <span className="font-mono text-white font-medium">
+                        {formatAmount(selectedMetrics.total_amount)}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-gray-400">Total forms:</span>{' '}
-                      <span className="font-mono" style={{ color: '#88BACE' }}>
-                        {formatNumForms(selectedActorDetails.total_num_forms)}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total forms:</span>
+                      <span className="font-mono text-white font-medium">
+                        {formatNumForms(selectedMetrics.total_num_forms)}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-gray-400">Avg per form:</span>{' '}
-                      <span className="font-mono" style={{ color: '#88BACE' }}>
-                        {formatAmountPerForm(selectedActorDetails.amount_per_form)}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Avg per form:</span>
+                      <span className="font-mono text-white font-medium">
+                        {formatAmountPerForm(selectedMetrics.amount_per_form)}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-gray-400">Lines:</span>{' '}
-                      <span className="font-mono" style={{ color: '#88BACE' }}>
-                        {selectedActorDetails.num_lines?.toLocaleString() || 'N/A'}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Lines:</span>
+                      <span className="font-mono text-white font-medium">
+                        {selectedMetrics.num_lines?.toLocaleString() || 'N/A'}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {/* ✅ Index/Section node: show aggregated metrics */}
-                {selectedActorDetails?.node_type === 'index' && (
-                  <div className="p-2 bg-indigo-900/20 border border-indigo-700/30 rounded text-xs space-y-1">
-                    <div>
-                      <span className="text-gray-400">Total amount:</span>{' '}
-                      <span className="font-mono" style={{ color: '#41378F' }}>
-                        {formatAmount(selectedActorDetails.total_amount)}
+                {/* Index/Section node: neutral styling with category badge */}
+                {selectedActorDetails?.node_type === 'index' && selectedMetrics && (
+                  <div className="p-3 bg-gray-700/50 border border-gray-600 rounded text-xs space-y-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+                        Section Aggregates
+                      </div>
+                      <div className="text-xs font-semibold text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded">
+                        {getCategoryFilterLabel()}
+                      </div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total amount:</span>
+                      <span className="font-mono text-white font-medium">
+                        {formatAmount(selectedMetrics.total_amount)}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-gray-400">Total forms:</span>{' '}
-                      <span className="font-mono" style={{ color: '#41378F' }}>
-                        {formatNumForms(selectedActorDetails.total_num_forms)}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total forms:</span>
+                      <span className="font-mono text-white font-medium">
+                        {formatNumForms(selectedMetrics.total_num_forms)}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-gray-400">Avg per form:</span>{' '}
-                      <span className="font-mono" style={{ color: '#41378F' }}>
-                        {formatAmountPerForm(selectedActorDetails.amount_per_form)}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Avg per form:</span>
+                      <span className="font-mono text-white font-medium">
+                        {formatAmountPerForm(selectedMetrics.amount_per_form)}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-gray-400">Citing lines:</span>{' '}
-                      <span className="font-mono" style={{ color: '#41378F' }}>
-                        {selectedActorDetails.num_lines?.toLocaleString() || 'N/A'}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Citing lines:</span>
+                      <span className="font-mono text-white font-medium">
+                        {selectedMetrics.num_lines?.toLocaleString() || 'N/A'}
                       </span>
                     </div>
                   </div>
@@ -370,6 +449,7 @@ export default function RightSidebar({
                             setFilterActor(actor.name);
                             setSearchQuery('');
                             setSearchResults([]);
+                            onActorClick?.(actor.name);
                           }}
                           className="w-full px-2 py-1 text-left text-xs hover:bg-gray-600 transition-colors border-b border-gray-600 last:border-b-0"
                         >
@@ -404,6 +484,7 @@ export default function RightSidebar({
                 ? (rel.target_id ?? rel.target)
                 : (rel.actor_id ?? rel.actor);
               const neighborDetails = nodeDetails[neighborId];
+              const neighborMetrics = getDisplayMetrics(neighborDetails);
 
               return (
                 <div key={rel.id}>
@@ -417,20 +498,15 @@ export default function RightSidebar({
                     <div className="text-sm flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-1 flex-wrap">
-                          {/* Actor with color */}
                           <span 
                             className="font-medium"
                             style={{ color: getNodeTypeColor(getNodeTypeFromRel(rel.actor, rel.actor_id)) }}
                           >
                             {rel.actor}
                           </span>
-                          
-                          {/* Action */}
                           <span className="text-gray-400 text-xs">
                             {rel.action}
                           </span>
-                          
-                          {/* Target with color */}
                           <span 
                             className="font-medium"
                             style={{ color: getNodeTypeColor(getNodeTypeFromRel(rel.target, rel.target_id)) }}
@@ -458,7 +534,7 @@ export default function RightSidebar({
                       )}
 
                       {/* Form node */}
-                      {neighborDetails && neighborDetails.node_type === 'form' && (
+                      {neighborDetails && neighborDetails.node_type === 'form' && neighborMetrics && (
                         <div className="space-y-2">
                           <div className="text-xs text-gray-400 mb-1">Form details</div>
                           <div className="font-semibold text-sm text-white">
@@ -472,38 +548,37 @@ export default function RightSidebar({
                               {neighborDetails.full_name}
                             </div>
                           )}
-                          {/* ✅ Show aggregated metrics */}
-                          <div className="mt-2 space-y-1">
-                            <div className="text-xs">
-                              <span className="text-gray-400">Total amount:</span>{' '}
-                              <span className="font-mono" style={{ color: '#88BACE' }}>
-                                {formatAmount(neighborDetails.total_amount)}
+                          <div className="mt-2 p-2 bg-gray-700/30 rounded space-y-1.5">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Total amount:</span>
+                              <span className="font-mono text-white font-medium">
+                                {formatAmount(neighborMetrics.total_amount)}
                               </span>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-gray-400">Total forms:</span>{' '}
-                              <span className="font-mono" style={{ color: '#88BACE' }}>
-                                {formatNumForms(neighborDetails.total_num_forms)}
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Total forms:</span>
+                              <span className="font-mono text-white font-medium">
+                                {formatNumForms(neighborMetrics.total_num_forms)}
                               </span>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-gray-400">Avg per form:</span>{' '}
-                              <span className="font-mono" style={{ color: '#88BACE' }}>
-                                {formatAmountPerForm(neighborDetails.amount_per_form)}
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Avg per form:</span>
+                              <span className="font-mono text-white font-medium">
+                                {formatAmountPerForm(neighborMetrics.amount_per_form)}
                               </span>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-gray-400">Lines:</span>{' '}
-                              <span className="font-mono" style={{ color: '#88BACE' }}>
-                                {neighborDetails.num_lines?.toLocaleString() || 'N/A'}
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Lines:</span>
+                              <span className="font-mono text-white font-medium">
+                                {neighborMetrics.num_lines?.toLocaleString() || 'N/A'}
                               </span>
                             </div>
                           </div>
                         </div>
                       )}
 
-                      {/* ✅ Line node: show individual metrics */}
-                      {neighborDetails && neighborDetails.node_type === 'line' && (
+                      {/* Line node */}
+                      {neighborDetails && neighborDetails.node_type === 'line' && neighborMetrics && (
                         <div className="space-y-2">
                           <div className="text-xs text-gray-400 mb-1">Line details</div>
                           <div className="font-semibold text-sm text-white">
@@ -512,22 +587,22 @@ export default function RightSidebar({
                           <div className="text-xs text-gray-400">
                             Category: {neighborDetails.category}
                           </div>
-                          <div className="mt-2 space-y-1">
-                            <div className="text-xs">
-                              <span className="text-gray-400">Amount:</span>{' '}
-                              <span className="font-mono" style={{ color: '#C679B4' }}>
-                                {formatAmount(neighborDetails.amount)}
+                          <div className="mt-2 p-2 bg-gray-700/30 rounded space-y-1.5">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Amount:</span>
+                              <span className="font-mono text-white font-medium">
+                                {formatAmount(neighborMetrics.amount)}
                               </span>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-gray-400">Forms:</span>{' '}
-                              <span className="font-mono" style={{ color: '#C679B4' }}>
-                                {formatNumForms(neighborDetails.num_forms)}
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Forms:</span>
+                              <span className="font-mono text-white font-medium">
+                                {formatNumForms(neighborMetrics.num_forms)}
                               </span>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-gray-400">Amount per form:</span>{' '}
-                              <span className="font-mono" style={{ color: '#C679B4' }}>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Amount per form:</span>
+                              <span className="font-mono text-white font-medium">
                                 {formatAmountPerForm(neighborDetails.amount_per_form)}
                               </span>
                             </div>
@@ -536,11 +611,14 @@ export default function RightSidebar({
                       )}
 
                       {/* Section/Index node */}
-                      {neighborDetails && (neighborDetails.node_type === 'section' || neighborDetails.node_type === 'index') && (
+                      {neighborDetails && (neighborDetails.node_type === 'section' || neighborDetails.node_type === 'index') && neighborMetrics && (
                         <div className="space-y-2">
                           <div className="text-xs text-gray-400 mb-1">USC Section</div>
                           <div className="font-semibold text-sm text-white">
                             {neighborDetails.name}
+                          </div>
+                          <div className="text-xs font-semibold text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded inline-block">
+                            {getCategoryFilterLabel()}
                           </div>
                           {neighborDetails.full_name && (
                             <div className="text-xs text-gray-300">
@@ -552,30 +630,29 @@ export default function RightSidebar({
                               {neighborDetails.text}
                             </div>
                           )}
-                          {/* ✅ Show aggregated metrics */}
-                          <div className="mt-2 space-y-1">
-                            <div className="text-xs">
-                              <span className="text-gray-400">Total amount:</span>{' '}
-                              <span className="font-mono" style={{ color: '#41378F' }}>
-                                {formatAmount(neighborDetails.total_amount)}
+                          <div className="mt-2 p-2 bg-gray-700/30 rounded space-y-1.5">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Total amount:</span>
+                              <span className="font-mono text-white font-medium">
+                                {formatAmount(neighborMetrics.total_amount)}
                               </span>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-gray-400">Total forms:</span>{' '}
-                              <span className="font-mono" style={{ color: '#41378F' }}>
-                                {formatNumForms(neighborDetails.total_num_forms)}
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Total forms:</span>
+                              <span className="font-mono text-white font-medium">
+                                {formatNumForms(neighborMetrics.total_num_forms)}
                               </span>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-gray-400">Avg per form:</span>{' '}
-                              <span className="font-mono" style={{ color: '#41378F' }}>
-                                {formatAmountPerForm(neighborDetails.amount_per_form)}
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Avg per form:</span>
+                              <span className="font-mono text-white font-medium">
+                                {formatAmountPerForm(neighborMetrics.amount_per_form)}
                               </span>
                             </div>
-                            <div className="text-xs">
-                              <span className="text-gray-400">Citing lines:</span>{' '}
-                              <span className="font-mono" style={{ color: '#41378F' }}>
-                                {neighborDetails.num_lines?.toLocaleString() || 'N/A'}
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-400">Citing lines:</span>
+                              <span className="font-mono text-white font-medium">
+                                {neighborMetrics.num_lines?.toLocaleString() || 'N/A'}
                               </span>
                             </div>
                           </div>
@@ -658,4 +735,3 @@ export default function RightSidebar({
     </>
   );
 }
-

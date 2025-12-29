@@ -12,15 +12,28 @@ export interface GraphNode extends d3.SimulationNodeDatum {
   node_type: NodeType; // Required: 'form' | 'line' | 'index' | 'regulation'
 
   // IRS Forms-specific metadata
-  category?: 'individual' | 'corporation'; // ✅ UPDATED: Optional (index nodes don't have category)
+  category?: 'individual' | 'corporation'; // Optional (only for form/line/regulation nodes; index nodes don't have category)
   
-  // Line-specific properties
-  amount?: number;      // ✅ NEW: dollar amount for line items
-  num_forms?: number;   // ✅ NEW: number of forms with this line
+  // Line-specific properties (single values for category-specific nodes)
+  amount?: number;           // dollar amount for line items
+  num_forms?: number;        // number of forms with this line
   amount_per_form?: number | null;
+  
+  // Form/Line aggregated properties (single values for category-specific nodes)
   total_amount?: number | null;
   total_num_forms?: number | null;
   num_lines?: number;
+
+  // ✅ NEW: Category-specific properties for index nodes (shared across categories)
+  ind_total_amount?: number | null;      // Individual category total amount
+  ind_total_num_forms?: number | null;   // Individual category number of forms
+  ind_amount_per_form?: number | null;   // Individual category amount per form
+  ind_num_lines?: number;                // Individual category number of lines
+  
+  corp_total_amount?: number | null;     // Corporation category total amount
+  corp_total_num_forms?: number | null;  // Corporation category number of forms
+  corp_amount_per_form?: number | null;  // Corporation category amount per form
+  corp_num_lines?: number;               // Corporation category number of lines
 
   // Properties object containing additional data
   properties?: {
@@ -45,6 +58,7 @@ export interface GraphNode extends d3.SimulationNodeDatum {
   fx?: number | null;
   fy?: number | null;
 }
+
 
 export interface GraphLink {
   source: string | GraphNode;

@@ -60,7 +60,7 @@ function App() {
   const [actorRelationships, setActorRelationships] = useState<Relationship[]>([]);
   const [actorTotalBeforeFilter, setActorTotalBeforeFilter] = useState<number>(0);
   const [limit, setLimit] = useState(5000);
-  const [maxHops, setMaxHops] = useState<number | null>(1000);
+  const [maxHops, setMaxHops] = useState<number | null>(1500);
   const [minDensity, setMinDensity] = useState(50);
   const [enabledClusterIds, setEnabledClusterIds] = useState<Set<number>>(new Set());
   const [enabledCategories, setEnabledCategories] = useState<Set<string>>(new Set());
@@ -75,6 +75,11 @@ function App() {
     return !localStorage.getItem('hasSeenWelcome');
   });
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // ✅ NEW: Derive the current category for RightSidebar
+  const currentCategory = categoryFilter.size === 1 
+    ? Array.from(categoryFilter)[0] 
+    : 'all' as 'individual' | 'corporation' | 'all';
 
   // Convert graph nodes/links to relationships for the existing renderer
   const convertGraphToRelationships = useCallback((nodes: GraphNode[], links: GraphLink[]): Relationship[] => {
@@ -559,7 +564,9 @@ function App() {
             totalRelationships={actorTotalBeforeFilter}
             onClose={() => setSelectedActor(null)}
             yearRange={yearRange}
-            keywords={buildMode === 'bottom-up' ? bottomUpSearchKeywords : keywords} 
+            keywords={buildMode === 'bottom-up' ? bottomUpSearchKeywords : keywords}
+            categoryFilter={currentCategory}
+            onActorClick={handleActorClick}
           />
         </div>
       )}

@@ -87,6 +87,15 @@ export async function loadGraph(): Promise<{ nodes: GraphNode[], links: GraphLin
       total_num_forms: n.total_num_forms,
       num_lines: n.num_lines,
 
+      ind_total_amount: n.ind_total_amount,
+      ind_total_num_forms: n.ind_total_num_forms,
+      ind_amount_per_form: n.ind_amount_per_form,
+      ind_num_lines: n.ind_num_lines,
+      corp_total_amount: n.corp_total_amount,
+      corp_total_num_forms: n.corp_total_num_forms,
+      corp_amount_per_form: n.corp_amount_per_form,
+      corp_num_lines: n.corp_num_lines,
+
       properties: {
         full_name: n.full_name,
         text: n.text,
