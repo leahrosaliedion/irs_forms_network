@@ -37,7 +37,6 @@ export class NetworkBuilder {
     
     console.log(`✅ Adjacency map built in ${(performance.now() - startTime).toFixed(2)}ms`);
     
-    // ✅ NEW: Log edge type statistics for debugging
     const edgeTypeCount = new Map<string, number>();
     links.forEach(link => {
       const count = edgeTypeCount.get(link.edge_type) || 0;
@@ -67,7 +66,6 @@ export class NetworkBuilder {
         
         switch(field) {
           case 'name':
-            // Primary name field - always search this
             value = node.name;
             break;
           case 'full_name':
@@ -80,7 +78,6 @@ export class NetworkBuilder {
             value = node.properties?.text || node.text;
             break;
           default:
-            // Allow searching custom properties
             value = (node as any)[field] || node.properties?.[field];
         }
 
@@ -91,7 +88,6 @@ export class NetworkBuilder {
 
       // Apply AND/OR logic
       if (logic === 'OR') {
-        // OR logic: match if ANY term appears in ANY searchable value
         const shouldMatch = normalizedTerms.some(term => {
           return searchableValues.some(searchableValue => 
             searchableValue.includes(term)
@@ -102,7 +98,6 @@ export class NetworkBuilder {
           matchedIds.add(node.id);
         }
       } else {
-        // AND logic: match if ALL terms appear (in ANY of the searchable values)
         const allTermsMatch = normalizedTerms.every(term => {
           return searchableValues.some(searchableValue => 
             searchableValue.includes(term)
@@ -117,7 +112,6 @@ export class NetworkBuilder {
 
     console.log(`Found ${matchedIds.size} matching nodes using ${logic} logic`);
 
-    // Show sample matched nodes
     if (matchedIds.size > 0) {
       const sampleMatches = Array.from(matchedIds).slice(0, 5);
       console.log('Sample matched node IDs:', sampleMatches);
@@ -140,25 +134,24 @@ export class NetworkBuilder {
     const matchedIds = new Set<string>();
 
     this.allNodes.forEach(node => {
-      // Type filter - if empty, allow all
-      const typeMatch = allowedNodeTypes.length === 0 || 
+      // ✅ FIXED: Empty array means "allow nothing", not "allow all"
+      const typeMatch = allowedNodeTypes.length === 0 ? false : 
                        allowedNodeTypes.includes(node.node_type);
       
-      // Category filter - if empty, allow all
-      // ✅ UPDATED: Handle index nodes which don't have categories
-      const categoryMatch = allowedCategories.length === 0 || 
-                           node.node_type === 'index' || // Index nodes are category-agnostic
-                           allowedCategories.includes(node.category || '');
+      // ✅ FIXED: Empty array means "allow nothing", not "allow all"
+      // Exception: Index nodes are category-agnostic and always pass category filter
+      const categoryMatch = node.node_type === 'index' || 
+                           (allowedCategories.length > 0 && allowedCategories.includes(node.category || ''));
 
-      // Node must match both filters (if active)
+      // Node must match both filters
       if (typeMatch && categoryMatch) {
         matchedIds.add(node.id);
       }
     });
 
     console.log(`Attribute filter matched ${matchedIds.size} nodes`);
-    console.log(`  Type filter: ${allowedNodeTypes.length > 0 ? allowedNodeTypes.join(', ') : 'none'}`);
-    console.log(`  Category filter: ${allowedCategories.length > 0 ? allowedCategories.join(', ') : 'none'}`);
+    console.log(`  Type filter: ${allowedNodeTypes.length > 0 ? allowedNodeTypes.join(', ') : 'NONE (blocking all)'}`);
+    console.log(`  Category filter: ${allowedCategories.length > 0 ? allowedCategories.join(', ') : 'NONE (blocking all non-index)'}`);
     
     return matchedIds;
   }
@@ -183,15 +176,13 @@ export class NetworkBuilder {
       const nextLayer = new Set<string>();
 
       currentLayer.forEach(nodeId => {
-        // O(1) lookup instead of filtering all links
         const neighbors = this.adjacencyMap.get(nodeId) || [];
         
-        // ✅ Filter by edge type if specified (includes hierarchy and reference)
+        // ✅ FIXED: Empty allowedEdgeTypes means "no expansion allowed"
         const filteredNeighbors = allowedEdgeTypes.length === 0
-          ? neighbors
+          ? [] // No edge types allowed = no expansion
           : neighbors.filter(n => allowedEdgeTypes.includes(n.edgeType));
         
-        // Limit neighbors if needed
         const limitedNeighbors = maxNeighborsPerNode > 0 
           ? filteredNeighbors.slice(0, maxNeighborsPerNode)
           : filteredNeighbors;
@@ -204,7 +195,7 @@ export class NetworkBuilder {
         });
       });
 
-      console.log(`  Layer ${i + 1}: added ${nextLayer.size} new nodes`);
+      console.log(`  Layer ${i + 1}: added ${nextLayer.size} new nodes (filtered by edge types: ${allowedEdgeTypes.join(', ') || 'NONE'})`);
       currentLayer = nextLayer;
       if (currentLayer.size === 0) break;
     }
@@ -215,7 +206,7 @@ export class NetworkBuilder {
 
   /**
    * Build network from current filter state
-   * ✅ UPDATED: Now handles all 5 edge types (belongs_to, cites_section, cites_regulation, hierarchy, reference)
+   * ✅ UPDATED: Fixed edge type filtering to properly handle empty arrays
    */
   buildNetwork(state: NetworkBuilderState, searchLogic: 'AND' | 'OR' = 'OR', nodeRankingMode: 'global' | 'subgraph' = 'global'): FilteredGraph {
     const startTime = performance.now();
@@ -223,7 +214,7 @@ export class NetworkBuilder {
     console.log('Building network with state:', state);
     console.log('Search logic:', searchLogic);
     console.log('Node ranking mode:', nodeRankingMode);
-    console.log('Allowed edge types:', state.allowedEdgeTypes); // ✅ NEW: Log allowed edge types
+    console.log('Allowed edge types:', state.allowedEdgeTypes);
     
     let candidateNodeIds = new Set<string>();
     let seedNodeIds = new Set<string>();
@@ -247,66 +238,107 @@ export class NetworkBuilder {
       console.log(`Found ${seedNodeIds.size} seed nodes from search`);
       
       // Step 1b: Expand from seed nodes if expansion depth > 0
-      const expandStart = performance.now();
+  const expandStart = performance.now();
 
-      if (state.expansionDepth > 0) {
-        console.log(`Expanding ${state.expansionDepth} degree(s) from seed nodes...`);
-        candidateNodeIds = this.expandFromSeeds(
-          seedNodeIds,
-          state.expansionDepth,
-          state.maxNodesPerExpansion,
-          state.allowedEdgeTypes // ✅ Pass allowed edge types including hierarchy/reference
-        );
-        console.log(`⏱️ Step 1b (expandFromSeeds): ${(performance.now() - expandStart).toFixed(2)}ms`);
-      } else {
-        // No expansion, just use the seed nodes
-        candidateNodeIds = new Set(seedNodeIds);
-      }
-    } else {
-      // Start with all nodes if no search
-      candidateNodeIds = new Set(this.allNodes.map(n => n.id));
-      console.log('No search terms, starting with all nodes:', candidateNodeIds.size);
-    }
-
-    // Step 2: Apply attribute filters ONLY to seed nodes, not expanded nodes
-    const shouldFilterSeeds = state.searchTerms.length > 0 && state.searchFields.length > 0;
-
-    if (shouldFilterSeeds && (state.allowedNodeTypes.length > 0 || state.allowedCategories.length > 0)) {
-      // Filter only the seed nodes by type and category
-      const seedsAfterFilter = new Set(
-        [...seedNodeIds].filter(id => {
+  if (state.expansionDepth > 0) {
+    console.log(`Expanding ${state.expansionDepth} degree(s) from seed nodes...`);
+    candidateNodeIds = this.expandFromSeeds(
+      seedNodeIds,
+      state.expansionDepth,
+      state.maxNodesPerExpansion,
+      state.allowedEdgeTypes
+    );
+    console.log(`⏱️ Step 1b (expandFromSeeds): ${(performance.now() - expandStart).toFixed(2)}ms`);
+    
+    // ✅ NEW: Also filter expanded nodes by type (but not by category)
+    if (state.allowedNodeTypes.length > 0) {
+      const beforeFilter = candidateNodeIds.size;
+      candidateNodeIds = new Set(
+        [...candidateNodeIds].filter(id => {
           const node = this.allNodes.find(n => n.id === id);
           if (!node) return false;
           
-          const typeMatch = state.allowedNodeTypes.length === 0 || 
-                           state.allowedNodeTypes.includes(node.node_type);
-          // ✅ UPDATED: Handle index nodes in category matching
-          const categoryMatch = state.allowedCategories.length === 0 || 
-                               node.node_type === 'index' || // Index nodes are category-agnostic
-                               state.allowedCategories.includes(node.category || '');
+          // Keep seed nodes regardless, filter expanded nodes by type
+          if (seedNodeIds.has(id)) return true;
           
-          return typeMatch && categoryMatch;
+          return state.allowedNodeTypes.includes(node.node_type);
         })
       );
-      
-      console.log(`Seed nodes after filters: ${seedNodeIds.size} → ${seedsAfterFilter.size}`);
-      
-      // Keep all expanded nodes regardless of type/category
-      candidateNodeIds = new Set(
-        [...candidateNodeIds].filter(id => 
-          seedsAfterFilter.has(id) || !seedNodeIds.has(id)
-        )
-      );
-      
-      console.log(`After applying filters to seeds only: ${candidateNodeIds.size} nodes`);
-    } else {
-      console.log('No node filters applied');
+      console.log(`Filtered expanded nodes by type: ${beforeFilter} → ${candidateNodeIds.size}`);
     }
+  } else {
+    // No expansion, just use the seed nodes
+    candidateNodeIds = new Set(seedNodeIds);
+  }
+} else {
+  // Start with all nodes if no search
+  candidateNodeIds = new Set(this.allNodes.map(n => n.id));
+  console.log('No search terms, starting with all nodes:', candidateNodeIds.size);
+}
+
+    // Step 2: Apply attribute filters ONLY to seed nodes, not expanded nodes
+const shouldFilterSeeds = state.searchTerms.length > 0 && state.searchFields.length > 0;
+
+if (shouldFilterSeeds) {
+  // ✅ UPDATED: Always filter seed nodes by type and category when in search mode
+  const seedsAfterFilter = new Set(
+    [...seedNodeIds].filter(id => {
+      const node = this.allNodes.find(n => n.id === id);
+      if (!node) return false;
+      
+      // ✅ FIXED: Type must be in allowed list (empty = allow nothing)
+      const typeMatch = state.allowedNodeTypes.length > 0 && 
+                       state.allowedNodeTypes.includes(node.node_type);
+      
+      // ✅ FIXED: Category matching
+      // - If it's an index or regulation node (no category), only check type
+      // - If it has a category (form/line), must match allowedCategories
+      let categoryMatch = true;
+      if (node.node_type === 'form' || node.node_type === 'line') {
+        // Forms and lines have categories - must match if specified
+        categoryMatch = state.allowedCategories.length === 0 || 
+                       state.allowedCategories.includes(node.category || '');
+      }
+      // Index and regulation nodes don't have categories, so they always pass category check
+      
+      return typeMatch && categoryMatch;
+    })
+  );
+  
+  console.log(`Seed nodes after filters: ${seedNodeIds.size} → ${seedsAfterFilter.size}`);
+  console.log('Allowed node types:', state.allowedNodeTypes);
+  console.log('Allowed categories:', state.allowedCategories);
+  
+  // ✅ UPDATED: If no seeds pass the filter, return empty result
+  if (seedsAfterFilter.size === 0) {
+    console.warn('No seed nodes passed the type/category filters');
+    return {
+      nodes: [],
+      links: [],
+      truncated: false,
+      matchedCount: 0
+    };
+  }
+  
+  // Keep all expanded nodes regardless of type/category
+  candidateNodeIds = new Set(
+    [...candidateNodeIds].filter(id => 
+      seedsAfterFilter.has(id) || !seedNodeIds.has(id)
+    )
+  );
+  
+  // ✅ NEW: Update seedNodeIds to filtered set for expansion
+  seedNodeIds = seedsAfterFilter;
+  
+  console.log(`After applying filters to seeds only: ${candidateNodeIds.size} nodes`);
+} else {
+  console.log('No node filters applied (not in search mode)');
+}
+
 
     // Step 3: Build graph with candidate nodes
     console.log(`📊 Total candidate nodes: ${candidateNodeIds.size}`);
 
-    // Create Map for O(1) lookup
     const candidateNodeMap = new Map<string, GraphNode>();
     this.allNodes.forEach(n => {
       if (candidateNodeIds.has(n.id)) {
@@ -317,18 +349,18 @@ export class NetworkBuilder {
     const candidateNodes = Array.from(candidateNodeMap.values());
 
     // Step 4: Filter links (only between candidate nodes)
-    // ✅ UPDATED: Now filters by all 5 edge types
+    // ✅ FIXED: Empty allowedEdgeTypes now means "show NO edges"
     const candidateLinks = this.allLinks.filter(link => {
       const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
       const targetId = typeof link.target === 'string' ? link.target : link.target.id;
       
-      const edgeTypeMatch = state.allowedEdgeTypes.length === 0 || 
+      // ✅ CRITICAL FIX: If allowedEdgeTypes is empty, NO edges pass
+      const edgeTypeMatch = state.allowedEdgeTypes.length > 0 && 
                            state.allowedEdgeTypes.includes(link.edge_type);
       
       return edgeTypeMatch && candidateNodeMap.has(sourceId) && candidateNodeMap.has(targetId);
     });
 
-    // ✅ NEW: Log edge type breakdown in filtered links
     const filteredEdgeTypeCount = new Map<string, number>();
     candidateLinks.forEach(link => {
       const count = filteredEdgeTypeCount.get(link.edge_type) || 0;
@@ -336,6 +368,17 @@ export class NetworkBuilder {
     });
     console.log(`After edge filtering: ${candidateNodes.length} nodes, ${candidateLinks.length} links`);
     console.log('Edge type breakdown:', Object.fromEntries(filteredEdgeTypeCount));
+
+    // ✅ NEW: If no edges are allowed, return only matched seed nodes (disconnected)
+    if (state.allowedEdgeTypes.length === 0 && state.expansionDepth === 0) {
+      console.log('⚠️ No edge types enabled and depth=0: returning only seed nodes (disconnected)');
+      return {
+        nodes: candidateNodes,
+        links: [],
+        truncated: false,
+        matchedCount: candidateNodes.length
+      };
+    }
 
     // Step 5: Remove isolated nodes (nodes with no edges)
     const nodesWithEdges = new Set<string>();
@@ -367,7 +410,6 @@ export class NetworkBuilder {
 
     if (truncated) {
       if (nodeRankingMode === 'subgraph') {
-        // SUBGRAPH MODE: Rank by degree in filtered candidate graph
         const nodeDegrees = new Map<string, number>();
         
         candidateLinks.forEach(link => {
@@ -387,7 +429,6 @@ export class NetworkBuilder {
         console.log(`🔝 Selected top ${finalNodeIds.size} nodes by SUBGRAPH degree`);
         
       } else {
-        // GLOBAL MODE: Rank by degree in full graph
         finalNodeIds = new Set(this.selectTopNodesByDegree(connectedNodeIds, state.maxTotalNodes));
         console.log(`🔝 Selected top ${finalNodeIds.size} nodes by GLOBAL degree`);
       }
@@ -420,7 +461,6 @@ export class NetworkBuilder {
 
     const colorStart = performance.now();
 
-    // Compute degree (number of connections) for each node
     const nodeDegree = new Map<string, number>();
     links.forEach(link => {
       const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
@@ -429,23 +469,17 @@ export class NetworkBuilder {
       nodeDegree.set(targetId, (nodeDegree.get(targetId) || 0) + 1);
     });
 
-    // Set val to degree for each node
     nodes.forEach(node => {
       node.val = nodeDegree.get(node.id) || 1;
       node.totalVal = node.val;
     });
 
-    // Find max degree for scaling
     const maxVal = Math.max(...nodes.map(n => n.val || 1), 1);
+    const strength = (v: number) => Math.pow(v / maxVal, 0.6);
 
-    // Create strength function (0 to 1 based on connections)
-    const strength = (v: number) => Math.pow(v / maxVal, 0.6); // Lower exponent = more dramatic gradient
-
-    // Color scales for IRS forms node types - EXPANDED gradients
     const formColorScale = (t: number) => {
-      // Teal gradient for forms
-      const r1 = 0xD9, g1 = 0xEE, b1 = 0xF5; // Very light teal
-      const r2 = 0x88, g2 = 0xBA, b2 = 0xCE; // Teal
+      const r1 = 0xD9, g1 = 0xEE, b1 = 0xF5;
+      const r2 = 0x88, g2 = 0xBA, b2 = 0xCE;
       const r = Math.round(r1 + (r2 - r1) * t);
       const g = Math.round(g1 + (g2 - g1) * t);
       const b = Math.round(b1 + (b2 - b1) * t);
@@ -453,9 +487,8 @@ export class NetworkBuilder {
     };
 
     const lineColorScale = (t: number) => {
-      // Magenta gradient for lines
-      const r1 = 0xD9, g1 = 0x9B, b1 = 0xC9; // Very light magenta
-      const r2 = 0x9C, g2 = 0x33, b2 = 0x91; // Magenta
+      const r1 = 0xD9, g1 = 0x9B, b1 = 0xC9;
+      const r2 = 0x9C, g2 = 0x33, b2 = 0x91;
       const r = Math.round(r1 + (r2 - r1) * t);
       const g = Math.round(g1 + (g2 - g1) * t);
       const b = Math.round(b1 + (b2 - b1) * t);
@@ -463,9 +496,8 @@ export class NetworkBuilder {
     };
 
     const indexColorScale = (t: number) => {
-      // Ink gradient for index nodes
-      const r1 = 0x9B, g1 = 0x8B, b1 = 0xCC; // Very light purple
-      const r2 = 0x41, g2 = 0x37, b2 = 0x8F; // Ink
+      const r1 = 0x9B, g1 = 0x8B, b1 = 0xCC;
+      const r2 = 0x41, g2 = 0x37, b2 = 0x8F;
       const r = Math.round(r1 + (r2 - r1) * t);
       const g = Math.round(g1 + (g2 - g1) * t);
       const b = Math.round(b1 + (b2 - b1) * t);
@@ -473,16 +505,14 @@ export class NetworkBuilder {
     };
 
     const regulationColorScale = (t: number) => {
-      // Lilac gradient for regulations
-      const r1 = 0xD9, g1 = 0xC6, b1 = 0xE3; // Very light lilac
-      const r2 = 0xA6, g2 = 0x7E, b2 = 0xB3; // Lilac
+      const r1 = 0xD9, g1 = 0xC6, b1 = 0xE3;
+      const r2 = 0xA6, g2 = 0x7E, b2 = 0xB3;
       const r = Math.round(r1 + (r2 - r1) * t);
       const g = Math.round(g1 + (g2 - g1) * t);
       const b = Math.round(b1 + (b2 - b1) * t);
       return `rgb(${r}, ${g}, ${b})`;
     };
 
-    // Apply colors to each node based on type and degree strength
     nodes.forEach(node => {
       const t = strength(node.val || 1);
       let color: string;
@@ -496,7 +526,7 @@ export class NetworkBuilder {
       } else if (node.node_type === 'regulation') {
         color = regulationColorScale(t);
       } else {
-        color = '#AFBBE8'; // fallback steel color
+        color = '#AFBBE8';
       }
 
       node.color = color;
@@ -525,20 +555,14 @@ export class NetworkBuilder {
     };
   }
 
-  /**
-   * Select top N nodes by degree (number of connections)
-   * This maintains graph connectivity when applying node caps
-   */
   private selectTopNodesByDegree(nodeIds: Set<string>, maxNodes: number): string[] {
     const nodeDegrees = new Map<string, number>();
     
-    // Count connections for each candidate node
     nodeIds.forEach(nodeId => {
       const neighbors = this.adjacencyMap.get(nodeId) || [];
       nodeDegrees.set(nodeId, neighbors.length);
     });
     
-    // Sort by degree descending and take top N
     const result = Array.from(nodeDegrees.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, maxNodes)
