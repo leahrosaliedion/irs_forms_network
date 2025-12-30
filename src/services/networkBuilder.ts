@@ -220,24 +220,24 @@ export class NetworkBuilder {
     let seedNodeIds = new Set<string>();
 
     // Step 1: Apply keyword search if present
-    const step1Start = performance.now();
-    if (state.searchTerms.length > 0 && state.searchFields.length > 0) {
-      seedNodeIds = this.searchNodes(state.searchTerms, state.searchFields, searchLogic);
-      console.log(`⏱️ Step 1 (searchNodes): ${(performance.now() - step1Start).toFixed(2)}ms`);
+const step1Start = performance.now();
+if (state.searchTerms.length > 0 && state.searchFields.length > 0) {
+  seedNodeIds = this.searchNodes(state.searchTerms, state.searchFields, searchLogic);
+  console.log(`⏱️ Step 1 (searchNodes): ${(performance.now() - step1Start).toFixed(2)}ms`);
 
-      if (seedNodeIds.size === 0) {
-        console.warn('No nodes matched the search terms!');
-        return {
-          nodes: [],
-          links: [],
-          truncated: false,
-          matchedCount: 0
-        };
-      }
-      
-      console.log(`Found ${seedNodeIds.size} seed nodes from search`);
-      
-      // Step 1b: Expand from seed nodes if expansion depth > 0
+  if (seedNodeIds.size === 0) {
+    console.warn('No nodes matched the search terms!');
+    return {
+      nodes: [],
+      links: [],
+      truncated: false,
+      matchedCount: 0
+    };
+  }
+  
+  console.log(`Found ${seedNodeIds.size} seed nodes from search`);
+  
+  // Step 1b: Expand from seed nodes if expansion depth > 0
   const expandStart = performance.now();
 
   if (state.expansionDepth > 0) {
@@ -250,21 +250,34 @@ export class NetworkBuilder {
     );
     console.log(`⏱️ Step 1b (expandFromSeeds): ${(performance.now() - expandStart).toFixed(2)}ms`);
     
-    // ✅ NEW: Also filter expanded nodes by type (but not by category)
-    if (state.allowedNodeTypes.length > 0) {
+    // ✅ UPDATED: Also filter expanded nodes by type AND category
+    if (state.allowedNodeTypes.length > 0 || state.allowedCategories.length > 0) {
       const beforeFilter = candidateNodeIds.size;
       candidateNodeIds = new Set(
         [...candidateNodeIds].filter(id => {
           const node = this.allNodes.find(n => n.id === id);
           if (!node) return false;
           
-          // Keep seed nodes regardless, filter expanded nodes by type
+          // Keep seed nodes regardless (already filtered in Step 2)
           if (seedNodeIds.has(id)) return true;
           
-          return state.allowedNodeTypes.includes(node.node_type);
+          // Filter expanded nodes by type
+          const typeMatch = state.allowedNodeTypes.length === 0 || 
+                           state.allowedNodeTypes.includes(node.node_type);
+          
+          // ✅ NEW: Filter expanded nodes by category
+          let categoryMatch = true;
+          if (node.node_type === 'form' || node.node_type === 'line') {
+            // Forms and lines must match category filter
+            categoryMatch = state.allowedCategories.length === 0 || 
+                           state.allowedCategories.includes(node.category || '');
+          }
+          // Index and regulation nodes always pass category check
+          
+          return typeMatch && categoryMatch;
         })
       );
-      console.log(`Filtered expanded nodes by type: ${beforeFilter} → ${candidateNodeIds.size}`);
+      console.log(`Filtered expanded nodes by type/category: ${beforeFilter} → ${candidateNodeIds.size}`);
     }
   } else {
     // No expansion, just use the seed nodes
@@ -276,7 +289,8 @@ export class NetworkBuilder {
   console.log('No search terms, starting with all nodes:', candidateNodeIds.size);
 }
 
-    // Step 2: Apply attribute filters ONLY to seed nodes, not expanded nodes
+
+ // Step 2: Apply attribute filters ONLY to seed nodes, not expanded nodes
 const shouldFilterSeeds = state.searchTerms.length > 0 && state.searchFields.length > 0;
 
 if (shouldFilterSeeds) {
@@ -286,17 +300,16 @@ if (shouldFilterSeeds) {
       const node = this.allNodes.find(n => n.id === id);
       if (!node) return false;
       
-      // ✅ FIXED: Type must be in allowed list (empty = allow nothing)
+      // ✅ Type must be in allowed list (empty = allow nothing)
       const typeMatch = state.allowedNodeTypes.length > 0 && 
                        state.allowedNodeTypes.includes(node.node_type);
       
       // ✅ FIXED: Category matching
-      // - If it's an index or regulation node (no category), only check type
-      // - If it has a category (form/line), must match allowedCategories
       let categoryMatch = true;
       if (node.node_type === 'form' || node.node_type === 'line') {
-        // Forms and lines have categories - must match if specified
-        categoryMatch = state.allowedCategories.length === 0 || 
+        // Forms and lines have categories - must match allowedCategories
+        // ✅ CHANGED: No longer allow all if empty - must match specified categories
+        categoryMatch = state.allowedCategories.length > 0 && 
                        state.allowedCategories.includes(node.category || '');
       }
       // Index and regulation nodes don't have categories, so they always pass category check
@@ -327,13 +340,14 @@ if (shouldFilterSeeds) {
     )
   );
   
-  // ✅ NEW: Update seedNodeIds to filtered set for expansion
+  // ✅ Update seedNodeIds to filtered set for expansion
   seedNodeIds = seedsAfterFilter;
   
   console.log(`After applying filters to seeds only: ${candidateNodeIds.size} nodes`);
 } else {
   console.log('No node filters applied (not in search mode)');
 }
+
 
 
     // Step 3: Build graph with candidate nodes
