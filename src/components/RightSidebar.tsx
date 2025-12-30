@@ -209,8 +209,8 @@ export default function RightSidebar({
     const colors: Record<string, string> = {
       'form': '#88BACE',
       'line': '#C679B4',
-      'index': '#41378F',
-      'section': '#41378F',
+      'index': '#9B96C9',
+      'section': '#9B96C9',
       'regulation': '#A67EB3'
     };
     return colors[type || ''] || '#AFBBE8';
